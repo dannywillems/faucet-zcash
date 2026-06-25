@@ -1,0 +1,19 @@
+[package]
+name = "faucet-addr-wasm"
+version = "0.1.0"
+description = "wasm-bindgen address validator for the faucet frontend (not WebZjs)."
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[lints.clippy]
+all = "warn"
+
+[dependencies]
+faucet-core = { path = "../faucet-core" }
+# wasm-bindgen is added after dependency approval is recorded.

@@ -1,0 +1,33 @@
+# Cargo workspace for the Zcash testnet faucet.
+#
+# Members build for different targets:
+#   - crates/faucet-core      : shared, compiles to native AND wasm32
+#   - crates/faucet-addr-wasm : wasm-bindgen address validator (frontend)
+#   - signer                  : native axum service (holds seed, proves, broadcasts)
+#   - worker                  : Cloudflare Worker (wasm32-unknown-unknown)
+#
+# `worker` and `faucet-addr-wasm` are wasm-only; build them with an explicit
+# --target. `default-members` keeps a bare `cargo build` to the native crates so
+# wasm-only crates do not break a host build.
+[workspace]
+resolver = "2"
+members = [
+    "crates/faucet-core",
+    "crates/faucet-addr-wasm",
+    "signer",
+    "worker",
+]
+default-members = [
+    "crates/faucet-core",
+    "signer",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+authors = ["Danny Willems <danny@badaas.be>"]
+repository = "https://github.com/dannywillems/faucet-zcash"
+rust-version = "1.96"
+
+[workspace.dependencies]
+# Filled in once dependency approval is recorded in dependencies.md.

@@ -1,0 +1,16 @@
+[package]
+name = "faucet-core"
+version = "0.1.0"
+description = "Shared faucet types and Zcash address validation (native + wasm32)."
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints.clippy]
+all = "warn"
+
+[dependencies]
+# zcash_address and getrandom (wasm feature) are added after dependency
+# approval is recorded in dependencies.md.

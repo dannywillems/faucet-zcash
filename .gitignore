@@ -1,0 +1,48 @@
+# Rust
+/target/
+**/target/
+Cargo.lock.bak
+
+# Node / frontend
+node_modules/
+**/node_modules/
+dist/
+build/
+.svelte-kit/
+pkg/
+
+# wasm-pack output consumed by the frontend
+crates/faucet-addr-wasm/pkg/
+frontend/src/lib/wasm/
+
+# Cloudflare / wrangler
+.wrangler/
+.dev.vars
+worker/.wrangler/
+
+# Playwright
+playwright-report/
+test-results/
+
+# Secrets and local env (NEVER commit)
+.env
+.env.local
+*.local
+secrets/
+*.seed
+faucet-seed*
+*.params
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+*.tmp
+*.bak

@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+target/
+dist/
+build/
+.svelte-kit/
+pkg/
+
+# Generated wasm bindings
+crates/faucet-addr-wasm/pkg/
+frontend/src/lib/wasm/
+
+# Lockfiles and config that should not be reformatted
+*.toml
+*.lock
+
+# Changelog is hand-formatted
+CHANGELOG.md

@@ -1,0 +1,17 @@
+[package]
+name = "faucet-signer"
+version = "0.1.0"
+description = "Native Zcash faucet signer: holds the seed, builds/proves/signs transparent and Orchard transactions, broadcasts to zcashd."
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints.clippy]
+all = "warn"
+
+[dependencies]
+faucet-core = { path = "../crates/faucet-core" }
+# axum, tokio, zcash_client_backend/sqlite, orchard, zcash_primitives, k256,
+# zeroize are added after dependency approval is recorded in dependencies.md.
