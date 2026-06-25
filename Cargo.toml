@@ -29,6 +29,12 @@ authors = ["Danny Willems <danny@badaas.be>"]
 repository = "https://github.com/dannywillems/faucet-zcash"
 rust-version = "1.96"
 
+# Clippy lints, inherited by every member crate via `[lints] workspace = true`.
+# `all = "deny"` makes the full clippy::all group (correctness, suspicious,
+# style, complexity, perf) hard errors.
+[workspace.lints.clippy]
+all = "deny"
+
 # All dependencies are declared here and referenced from member crates with
 # `{ workspace = true }`, so versions and features are centralized. Grouped by
 # role. Entries that would exceed 80 columns use the table form (a TOML inline

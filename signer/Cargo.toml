@@ -9,8 +9,8 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-[lints.clippy]
-all = "warn"
+[lints]
+workspace = true
 
 [dependencies]
 async-trait = { workspace = true }

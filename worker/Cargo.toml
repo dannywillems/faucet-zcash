@@ -12,8 +12,8 @@ rust-version.workspace = true
 [lib]
 crate-type = ["cdylib"]
 
-[lints.clippy]
-all = "warn"
+[lints]
+workspace = true
 
 [dependencies]
 faucet-core = { workspace = true }
