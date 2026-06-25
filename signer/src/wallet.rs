@@ -15,13 +15,13 @@ use tonic::transport::Channel;
 use zcash_client_backend::data_api::chain::ChainState;
 use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError;
 use zcash_client_backend::data_api::wallet::{
-    create_proposed_transactions, propose_standard_transfer_to_address, ConfirmationsPolicy,
-    SpendingKeys,
+    ConfirmationsPolicy, SpendingKeys, create_proposed_transactions,
+    propose_standard_transfer_to_address,
 };
 use zcash_client_backend::data_api::{AccountBirthday, WalletRead, WalletWrite};
 use zcash_client_backend::fees::StandardFeeRule;
 use zcash_client_backend::proto::service::{
-    self, compact_tx_streamer_client::CompactTxStreamerClient, Empty,
+    self, Empty, compact_tx_streamer_client::CompactTxStreamerClient,
 };
 use zcash_client_backend::wallet::OvkPolicy;
 use zcash_client_sqlite::util::SystemClock;
@@ -31,9 +31,9 @@ use zcash_keys::address::Address;
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::block::BlockHash;
 use zcash_proofs::prover::LocalTxProver;
+use zcash_protocol::ShieldedProtocol;
 use zcash_protocol::consensus::{BlockHeight, Network as ZNetwork, NetworkUpgrade, Parameters};
 use zcash_protocol::value::Zatoshis;
-use zcash_protocol::ShieldedProtocol;
 use zeroize::Zeroizing;
 
 use faucet_core::{Network, Pool};

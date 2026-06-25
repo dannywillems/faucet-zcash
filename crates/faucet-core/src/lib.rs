@@ -13,7 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 use zcash_address::{ConversionError, TryFromAddress, ZcashAddress};
-use zcash_protocol::{consensus::NetworkType, PoolType};
+use zcash_protocol::{PoolType, consensus::NetworkType};
 
 /// Zcash network the faucet operates on. This faucet is testnet only, but the
 /// network is explicit so validation can reject mainnet addresses.

@@ -1,9 +1,9 @@
 //! Signer error type and its HTTP mapping. Error messages never include the
 //! seed, the bearer token, or raw node responses.
 
+use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 
 #[derive(thiserror::Error, Debug)]
 pub enum SignerError {

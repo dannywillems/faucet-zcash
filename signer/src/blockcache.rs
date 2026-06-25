@@ -10,7 +10,7 @@ use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use zcash_client_backend::data_api::chain::{error, BlockCache, BlockSource};
+use zcash_client_backend::data_api::chain::{BlockCache, BlockSource, error};
 use zcash_client_backend::data_api::scanning::ScanRange;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_protocol::consensus::BlockHeight;

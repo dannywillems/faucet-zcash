@@ -6,7 +6,7 @@
 //! never holds the seed and never builds transactions.
 
 use faucet_core::{
-    validate_destination, DripResponse, Network, SignerSendRequest, SignerSendResponse,
+    DripResponse, Network, SignerSendRequest, SignerSendResponse, validate_destination,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};

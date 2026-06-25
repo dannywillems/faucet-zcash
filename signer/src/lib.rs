@@ -12,7 +12,7 @@ use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use faucet_core::{validate_destination, Network, SignerSendRequest, SignerSendResponse};
+use faucet_core::{Network, SignerSendRequest, SignerSendResponse, validate_destination};
 use zeroize::Zeroizing;
 
 use crate::error::SignerError;

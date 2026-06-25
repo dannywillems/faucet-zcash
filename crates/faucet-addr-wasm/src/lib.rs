@@ -6,7 +6,7 @@
 //! note scanning, no proving, no parameters), so it stays tiny and compiles
 //! cleanly to `wasm32-unknown-unknown` without threads or `SharedArrayBuffer`.
 
-use faucet_core::{validate_destination, Network, Pool};
+use faucet_core::{Network, Pool, validate_destination};
 use wasm_bindgen::prelude::*;
 
 /// Result of validating a destination address, shaped for easy consumption in

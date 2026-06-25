@@ -8,7 +8,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use faucet_core::Network;
 use faucet_signer::wallet::Wallet;
-use faucet_signer::{build_app, AppState};
+use faucet_signer::{AppState, build_app};
 use tower::util::ServiceExt;
 use zeroize::Zeroizing;
 

@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use faucet_signer::config::Config;
 use faucet_signer::wallet::Wallet;
-use faucet_signer::{build_app, AppState};
+use faucet_signer::{AppState, build_app};
 
 #[tokio::main]
 async fn main() {
