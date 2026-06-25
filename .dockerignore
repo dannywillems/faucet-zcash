@@ -1,0 +1,11 @@
+target/
+**/target/
+node_modules/
+**/node_modules/
+frontend/build/
+frontend/.svelte-kit/
+crates/faucet-addr-wasm/pkg/
+frontend/src/lib/wasm/
+.git/
+.github/
+*.md

@@ -113,6 +113,25 @@ stack-up: ## Start zcashd + lightwalletd + signer locally
 stack-down: ## Stop the local stack
 	cd deploy && docker compose down
 
+## --- Deploy (Cloudflare) ---
+
+.PHONY: deploy-pages
+deploy-pages: frontend-build ## Deploy the frontend to Cloudflare Pages
+	cd frontend && npx --yes wrangler pages deploy build \
+		--project-name=faucet-zcash --branch=main
+
+.PHONY: deploy-worker
+deploy-worker: ## Deploy the Worker to Cloudflare
+	cd worker && npx --yes wrangler deploy
+
+.PHONY: docker-build-signer
+docker-build-signer: ## Build the signer Docker image
+	docker build -f signer/Dockerfile -t faucet-signer:latest .
+
+.PHONY: lint-docker
+lint-docker: ## Lint the signer Dockerfile with hadolint
+	hadolint signer/Dockerfile
+
 ## --- Aggregate ---
 
 .PHONY: ci

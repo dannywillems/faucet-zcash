@@ -1,0 +1,41 @@
+# Signer host stack. The signer is never exposed on a public port; the Worker
+# reaches it only through the Cloudflare Tunnel (cloudflared), which connects
+# out to Cloudflare. Copy .env.example to .env and fill the secrets first.
+#
+# By the current decision the signer uses a public testnet lightwalletd
+# (LIGHTWALLETD_URL). To self-host instead, run zcashd + lightwalletd (see
+# README.md) and point LIGHTWALLETD_URL at the local lightwalletd.
+
+services:
+  signer:
+    build:
+      context: ..
+      dockerfile: signer/Dockerfile
+    image: faucet-signer:latest
+    restart: unless-stopped
+    environment:
+      SIGNER_BIND: 0.0.0.0:8080
+      SIGNER_SHARED_SECRET: ${SIGNER_SHARED_SECRET:?set SIGNER_SHARED_SECRET in .env}
+      SIGNER_SEED: ${SIGNER_SEED:?set SIGNER_SEED in .env}
+      LIGHTWALLETD_URL: ${LIGHTWALLETD_URL:-https://testnet.zec.rocks:443}
+      FAUCET_NETWORK: testnet
+      RUST_LOG: info
+    expose:
+      - "8080"
+    networks:
+      - faucet
+
+  cloudflared:
+    image: cloudflare/cloudflared:2024.12.2
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARED_TUNNEL_TOKEN:?set CLOUDFLARED_TUNNEL_TOKEN in .env}
+    depends_on:
+      - signer
+    networks:
+      - faucet
+
+networks:
+  faucet:
+    driver: bridge
