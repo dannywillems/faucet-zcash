@@ -32,8 +32,10 @@ OTP_TTL_SECONDS = "300"
 OTP_MAX_ATTEMPTS = "5"
 # Session lifetime (7 days).
 SESSION_TTL_SECONDS = "604800"
-# Signer base URL (Cloudflare Tunnel hostname in production). The Worker
-# appends /send and /balance.
-SIGNER_URL = "https://signer.invalid"
+# SIGNER_URL (the signer's Cloudflare Tunnel base URL) is set as a Worker
+# SECRET, not a var, so it is environment-specific and survives redeploys:
+#   npx wrangler secret put SIGNER_URL   # e.g. https://signer.example
+# The Worker appends /send and /balance. If unset, drips report a clear
+# "signer not connected" message instead of failing opaquely.
 # Resend sender. Use a verified domain in production.
 RESEND_FROM = "Zcash Faucet <onboarding@resend.dev>"
