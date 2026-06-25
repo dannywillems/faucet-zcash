@@ -56,6 +56,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - GitHub Actions CI (Rust fmt/clippy/test, wasm builds, `cargo-deny`) and the
   changelog, PR-hygiene, and shellcheck workflows.
 - Dependabot for cargo, npm, and github-actions (weekly, grouped).
+- Worker `wrangler.toml` carries the real D1 `database_id` and pins
+  `worker-build` to 0.8.5 (matching workers-rs); the Worker, D1 schema, Pages
+  site, and Resend/auth secrets are deployed.
 
 ### Changed
 
