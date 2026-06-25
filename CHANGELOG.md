@@ -28,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`/send` returns 503 until then).
 - Deploy: Cloudflare `deploy-pages` and `deploy-worker` workflows, signer
   Dockerfile + docker-compose (with cloudflared tunnel), and a deploy runbook.
+- Signer split into lib + bin with end-to-end service tests (auth, address
+  validation, routing, error mapping).
 
 ### Changed
 
