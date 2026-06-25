@@ -35,8 +35,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   seed (runtime-tested). Config and deploy target a local zaino + zebrad.
 - Signer connects to zaino (lightwalletd gRPC) and exposes an authenticated
   `/info` endpoint (network, account, chain height); the seed may be a BIP39
-  mnemonic or hex. Verified live against local zebra + zaino. Live
-  sync/broadcast is the remaining step.
+  mnemonic or hex. Verified live against local zebra + zaino.
+- Signer full send pipeline: syncs the account (with bounded back-off retry on
+  zebra 429 rate-limits), builds + proves (Orchard/transparent) and broadcasts
+  via `send_transaction`, returning the txid; `SIGNER_BIRTHDAY_HEIGHT` bounds
+  the initial scan.
 
 ### Changed
 
