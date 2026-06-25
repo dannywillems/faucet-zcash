@@ -57,7 +57,7 @@ serde_json = "1.0.150"
 
 # Crypto, hashing, secrets, mnemonic. sha2 0.10 (not 0.11) so it coexists with
 # the prerelease sha2 the git-pinned librustzcash stack pulls via bip32.
-bip0039 = { version = "0.12", features = ["std"] }
+bip0039 = { version = "0.14", features = ["std"] }
 hex = "0.4.3"
 secrecy = "0.8"
 sha2 = "0.10"
