@@ -404,6 +404,24 @@
           )}
         </li>
       </ol>
+      <p class="font-medium text-zinc-900 dark:text-zinc-100">
+        Background jobs
+      </p>
+      <ul class="list-disc space-y-2 pl-5">
+        <li>
+          <span class="font-medium">Signer service</span> (always on): a native
+          Rust process on the faucet host that holds the seed, stays synced to
+          the chain, and builds/proves/broadcasts transactions.
+          {@render srcLink('signer/src/main.rs')}
+        </li>
+        <li>
+          <span class="font-medium">Maintenance job</span> (every 10 minutes): a
+          cron on the faucet host that shields matured coinbase into Orchard and
+          refreshes the reserves shown above. {@render srcLink(
+            'deploy/faucet-maintenance.sh',
+          )}
+        </li>
+      </ul>
       <p>
         Full source:
         <a
