@@ -42,7 +42,11 @@ async function request<T>(
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
-    throw new ApiError(0, 'Network error. Please try again.');
+    throw new ApiError(
+      0,
+      'Network error: could not reach the faucet API. Check your connection ' +
+        'and try again.',
+    );
   }
 
   let data: unknown = null;
@@ -56,12 +60,36 @@ async function request<T>(
   }
 
   if (!res.ok) {
-    const message =
-      (data as { error?: string } | null)?.error ??
-      `Request failed (${res.status}).`;
+    // Prefer the API's own JSON error; otherwise explain the status code.
+    const serverMsg = (data as { error?: string } | null)?.error;
+    const message = serverMsg ?? describeStatus(res.status, res.statusText);
     throw new ApiError(res.status, message);
   }
   return data as T;
+}
+
+/** Human-readable explanation for an HTTP status with no JSON error body. */
+function describeStatus(status: number, statusText: string): string {
+  switch (status) {
+    case 401:
+      return 'Authentication failed (401). Reload the page and re-enter the access credentials, then sign in again.';
+    case 403:
+      return 'Not allowed (403). This email domain may not be permitted for the faucet.';
+    case 404:
+    case 405:
+      return `The faucet API did not handle this request (${status}). The API route is not reachable from this site - the "/api" path is not wired to the faucet backend yet.`;
+    case 429:
+      return 'Too many requests (429). Please wait a bit and try again.';
+    case 500:
+    case 502:
+    case 503:
+    case 504:
+      return `The faucet backend is temporarily unavailable (${status}). Please try again in a few minutes.`;
+    default: {
+      const suffix = statusText ? ` ${statusText}` : '';
+      return `Request failed (${status}${suffix}).`;
+    }
+  }
 }
 
 export const api = {
