@@ -65,7 +65,7 @@
 
   const explorerBase =
     import.meta.env.VITE_EXPLORER_BASE ??
-    'https://testnet.zcashexplorer.app/transactions/';
+    'https://testnet.cipherscan.app/tx/';
 
   const addressValid = $derived(check?.valid === true);
 
