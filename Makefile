@@ -84,6 +84,10 @@ frontend-check: build-wasm-addr ## Type-check the frontend (svelte-check)
 frontend-check-format: ## Check frontend formatting (prettier)
 	cd frontend && npm run check-format
 
+.PHONY: frontend-e2e
+frontend-e2e: build-wasm-addr ## Run frontend Playwright e2e tests
+	cd frontend && npm run test:e2e
+
 ## --- Shell / docs lint ---
 
 .PHONY: lint-shell

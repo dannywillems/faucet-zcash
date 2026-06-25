@@ -49,6 +49,36 @@ jobs:
       - name: Build wasm crates
         run: make build-wasm
 
+  frontend:
+    name: Frontend (format, check, build, e2e)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend deps
+        run: make frontend-install
+      - name: Check formatting
+        run: make frontend-check-format
+      - name: Type-check
+        run: make frontend-check
+      - name: Build
+        run: make frontend-build
+      - name: Install Playwright browser
+        run: cd frontend && npx playwright install --with-deps chromium
+      - name: E2E
+        run: make frontend-e2e
+
   deny:
     name: cargo deny (advisories, licenses, bans)
     runs-on: ubuntu-latest
