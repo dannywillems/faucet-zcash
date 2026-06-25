@@ -20,7 +20,7 @@ checksum = "b169f7a6d4742236a0a00c541b845991d0ac43e546831af1249753ab4c3aa3a0"
 dependencies = [
  "cfg-if",
  "cipher",
- "cpufeatures",
+ "cpufeatures 0.2.17",
 ]
 
 [[package]]
@@ -174,7 +174,7 @@ dependencies = [
  "log",
  "num_cpus",
  "pairing",
- "rand_core",
+ "rand_core 0.6.4",
  "rayon",
  "subtle",
 ]
@@ -187,7 +187,7 @@ checksum = "568b6890865156d9043af490d4c4081c385dd68ea10acd6ca15733d511e6b51c"
 dependencies = [
  "hmac 0.12.1",
  "pbkdf2",
- "rand",
+ "rand 0.8.6",
  "sha2 0.10.9",
  "unicode-normalization",
  "zeroize",
@@ -201,7 +201,7 @@ checksum = "143f5327f23168716be068f8e1014ba2ea16a6c91e8777bc8927da7b51e1df1f"
 dependencies = [
  "bs58",
  "hmac 0.13.0-pre.4",
- "rand_core",
+ "rand_core 0.6.4",
  "ripemd 0.2.0-pre.4",
  "secp256k1",
  "sha2 0.11.0-pre.4",
@@ -276,7 +276,7 @@ dependencies = [
  "ff",
  "group",
  "pairing",
- "rand_core",
+ "rand_core 0.6.4",
  "subtle",
 ]
 
@@ -350,7 +350,18 @@ checksum = "c3613f74bd2eac03dad61bd53dbe620703d4371614fe0bc3b9f04dd36fe4e818"
 dependencies = [
  "cfg-if",
  "cipher",
- "cpufeatures",
+ "cpufeatures 0.2.17",
+]
+
+[[package]]
+name = "chacha20"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d524456ba66e72eb8b115ff89e01e497f8e6d11d78b70b1aa13c0fbd97540a81"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.0",
+ "rand_core 0.10.1",
 ]
 
 [[package]]
@@ -360,7 +371,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10cd79432192d1c0f4e1a0fef9527696cc039165d729fb41b3f4f4f354c2dc35"
 dependencies = [
  "aead",
- "chacha20",
+ "chacha20 0.9.1",
  "cipher",
  "poly1305",
  "zeroize",
@@ -420,6 +431,15 @@ name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "cpufeatures"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201"
 dependencies = [
  "libc",
 ]
@@ -664,7 +684,7 @@ dependencies = [
  "bip0039",
  "faucet-core",
  "hex",
- "rand",
+ "rand 0.10.1",
  "rusqlite",
  "secrecy",
  "serde_json",
@@ -704,7 +724,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0b50bfb653653f9ca9095b427bed08ab8d75a137839d9ad64eb11810d5b6393"
 dependencies = [
  "bitvec",
- "rand_core",
+ "rand_core 0.6.4",
  "subtle",
 ]
 
@@ -780,7 +800,7 @@ dependencies = [
  "hex",
  "itertools",
  "postcard",
- "rand_core",
+ "rand_core 0.6.4",
  "serde",
  "serdect",
  "thiserror 2.0.18",
@@ -799,7 +819,7 @@ dependencies = [
  "document-features",
  "frost-core",
  "hex",
- "rand_core",
+ "rand_core 0.6.4",
 ]
 
 [[package]]
@@ -914,6 +934,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "r-efi 6.0.0",
+ "rand_core 0.10.1",
 ]
 
 [[package]]
@@ -935,7 +956,7 @@ checksum = "f0f9ef7462f7c099f518d754361858f86d8a07af53ba9af0fe635bbccb151a63"
 dependencies = [
  "ff",
  "memuse",
- "rand_core",
+ "rand_core 0.6.4",
  "subtle",
 ]
 
@@ -972,7 +993,7 @@ dependencies = [
  "halo2_proofs",
  "lazy_static",
  "pasta_curves",
- "rand",
+ "rand 0.8.6",
  "sinsemilla",
  "subtle",
  "uint",
@@ -1009,7 +1030,7 @@ dependencies = [
  "indexmap 1.9.3",
  "maybe-rayon",
  "pasta_curves",
- "rand_core",
+ "rand_core 0.6.4",
  "tracing",
 ]
 
@@ -1397,7 +1418,7 @@ dependencies = [
  "bls12_381",
  "ff",
  "group",
- "rand_core",
+ "rand_core 0.6.4",
  "subtle",
 ]
 
@@ -1661,8 +1682,8 @@ dependencies = [
  "memuse",
  "nonempty",
  "pasta_curves",
- "rand",
- "rand_core",
+ "rand 0.8.6",
+ "rand_core 0.6.4",
  "reddsa",
  "serde",
  "sinsemilla",
@@ -1690,7 +1711,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "346f04948ba92c43e8469c1ee6736c7563d71012b17d40745260fe106aac2166"
 dependencies = [
  "base64ct",
- "rand_core",
+ "rand_core 0.6.4",
  "subtle",
 ]
 
@@ -1704,7 +1725,7 @@ dependencies = [
  "ff",
  "group",
  "lazy_static",
- "rand",
+ "rand 0.8.6",
  "static_assertions",
  "subtle",
 ]
@@ -1784,7 +1805,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8159bd90725d2df49889a078b54f4f79e87f1f8a8444194cdca81d38f5393abf"
 dependencies = [
- "cpufeatures",
+ "cpufeatures 0.2.17",
  "opaque-debug",
  "universal-hash",
 ]
@@ -1931,7 +1952,18 @@ checksum = "5ca0ecfa931c29007047d1bc58e623ab12e5590e8c7cc53200d5202b69266d8a"
 dependencies = [
  "libc",
  "rand_chacha",
- "rand_core",
+ "rand_core 0.6.4",
+]
+
+[[package]]
+name = "rand"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2e8e8bcc7961af1fdac401278c6a831614941f6164ee3bf4ce61b7edb162207"
+dependencies = [
+ "chacha20 0.10.1",
+ "getrandom 0.4.3",
+ "rand_core 0.10.1",
 ]
 
 [[package]]
@@ -1941,7 +1973,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
 dependencies = [
  "ppv-lite86",
- "rand_core",
+ "rand_core 0.6.4",
 ]
 
 [[package]]
@@ -1954,13 +1986,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_core"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
+
+[[package]]
 name = "rand_distr"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32cb0b9bc82b0a0876c2dd994a7e7a2683d3e7390ca40e6886785ef0c7e3ee31"
 dependencies = [
  "num-traits",
- "rand",
+ "rand 0.8.6",
 ]
 
 [[package]]
@@ -1996,7 +2034,7 @@ dependencies = [
  "hex",
  "jubjub",
  "pasta_curves",
- "rand_core",
+ "rand_core 0.6.4",
  "serde",
  "thiserror 2.0.18",
  "zeroize",
@@ -2008,7 +2046,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "89b0ac1bc6bb3696d2c6f52cff8fba57238b81da8c0214ee6cd146eb8fde364e"
 dependencies = [
- "rand_core",
+ "rand_core 0.6.4",
  "reddsa",
  "thiserror 1.0.69",
  "zeroize",
@@ -2183,8 +2221,8 @@ dependencies = [
  "jubjub",
  "lazy_static",
  "memuse",
- "rand",
- "rand_core",
+ "rand 0.8.6",
+ "rand_core 0.6.4",
  "redjubjub",
  "subtle",
  "tracing",
@@ -2350,7 +2388,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba"
 dependencies = [
  "cfg-if",
- "cpufeatures",
+ "cpufeatures 0.2.17",
  "digest 0.10.7",
 ]
 
@@ -2361,7 +2399,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
  "cfg-if",
- "cpufeatures",
+ "cpufeatures 0.2.17",
  "digest 0.10.7",
 ]
 
@@ -2372,7 +2410,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "540c0893cce56cdbcfebcec191ec8e0f470dd1889b6e7a0b503e310a94a168f5"
 dependencies = [
  "cfg-if",
- "cpufeatures",
+ "cpufeatures 0.2.17",
  "digest 0.11.0-pre.9",
 ]
 
@@ -2525,7 +2563,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -3342,7 +3380,7 @@ dependencies = [
  "pasta_curves",
  "percent-encoding",
  "prost",
- "rand_core",
+ "rand_core 0.6.4",
  "rayon",
  "sapling-crypto",
  "secp256k1",
@@ -3386,8 +3424,8 @@ dependencies = [
  "nonempty",
  "orchard",
  "prost",
- "rand",
- "rand_core",
+ "rand 0.8.6",
+ "rand_core 0.6.4",
  "rand_distr",
  "regex",
  "rusqlite",
@@ -3451,7 +3489,7 @@ dependencies = [
  "memuse",
  "nonempty",
  "orchard",
- "rand_core",
+ "rand_core 0.6.4",
  "sapling-crypto",
  "secrecy",
  "subtle",
@@ -3469,10 +3507,10 @@ version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77efec759c3798b6e4d829fcc762070d9b229b0f13338c40bf993b7b609c2272"
 dependencies = [
- "chacha20",
+ "chacha20 0.9.1",
  "chacha20poly1305",
  "cipher",
- "rand_core",
+ "rand_core 0.6.4",
  "subtle",
 ]
 
@@ -3494,7 +3532,7 @@ dependencies = [
  "memuse",
  "nonempty",
  "orchard",
- "rand_core",
+ "rand_core 0.6.4",
  "redjubjub",
  "sapling-crypto",
  "secp256k1",
@@ -3519,7 +3557,7 @@ dependencies = [
  "home",
  "jubjub",
  "known-folders",
- "rand_core",
+ "rand_core 0.6.4",
  "redjubjub",
  "sapling-crypto",
  "tracing",
