@@ -39,7 +39,7 @@ rust-version = "1.96"
 faucet-core = { path = "crates/faucet-core" }
 
 # Cloudflare Worker runtime
-getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom = { version = "0.4", features = ["wasm_js"] }
 worker = { version = "0.8.5", features = ["d1"] }
 
 # Frontend wasm bindings
