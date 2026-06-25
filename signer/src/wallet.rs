@@ -177,9 +177,27 @@ impl Wallet {
         // Sync the wallet from zaino into an in-memory compact-block cache.
         let mut client = self.connect().await?;
         let db_cache = crate::blockcache::MemBlockCache::new();
-        zcash_client_backend::sync::run(&mut client, &params, &db_cache, &mut db, 10_000)
-            .await
-            .map_err(|e| SignerError::Internal(format!("sync: {e}")))?;
+        // Small batches keep the per-request load on zaino/zebra low. `sync::run`
+        // resumes from the wallet's stored progress, so on a transient
+        // rate-limit (zebra 429) we back off and retry, making incremental
+        // headway rather than failing the whole drip.
+        let mut attempts = 0u32;
+        loop {
+            match zcash_client_backend::sync::run(&mut client, &params, &db_cache, &mut db, 1_000)
+                .await
+            {
+                Ok(()) => break,
+                Err(e) => {
+                    let msg = format!("{e}");
+                    attempts += 1;
+                    if attempts > 60 || !msg.contains("429") {
+                        return Err(SignerError::Internal(format!("sync: {msg}")));
+                    }
+                    tracing::warn!(attempts, "sync rate-limited (429); backing off");
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+            }
+        }
 
         // Build and prove the transfer.
         let prover = LocalTxProver::with_default_location().ok_or_else(|| {

@@ -13,7 +13,10 @@ pub enum SignerError {
     BadRequest(String),
     #[error("wallet engine not ready: {0}")]
     NotReady(String),
-    #[error("internal error")]
+    // The signer is called only by the Worker over an authenticated internal
+    // channel, so surfacing the detail here aids debugging; the Worker decides
+    // what (if anything) to expose publicly.
+    #[error("internal error: {0}")]
     Internal(String),
 }
 
