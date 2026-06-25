@@ -19,6 +19,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `faucet-worker`: Cloudflare Worker faucet API on D1 (HTTP Basic Auth gate,
   Resend email OTP, sessions, per email/address/IP cooldown, signer call), with
   the D1 schema migration and `wrangler.toml`.
+- Frontend: SvelteKit + Tailwind static SPA with dark/light theme, the
+  email/OTP/drip flow, in-browser wasm address validation, the Pages Basic Auth
+  gate, and Playwright e2e. CI gains a frontend job.
 
 ### Changed
 
