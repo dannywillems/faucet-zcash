@@ -27,6 +27,9 @@ confidence-threshold = 0.9
 # (the Zcash stack pulls several); warn rather than fail.
 multiple-versions = "warn"
 wildcards = "deny"
+# Internal workspace crates are depended on by path without a version; allow
+# those rather than forcing a version on every internal crate.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"

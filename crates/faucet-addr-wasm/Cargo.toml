@@ -1,6 +1,7 @@
 [package]
 name = "faucet-addr-wasm"
 version = "0.1.0"
+publish = false
 description = "wasm-bindgen address validator for the faucet frontend (not WebZjs)."
 edition.workspace = true
 license.workspace = true

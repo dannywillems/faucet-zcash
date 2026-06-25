@@ -1,6 +1,7 @@
 [package]
 name = "faucet-worker"
 version = "0.1.0"
+publish = false
 description = "Cloudflare Worker (Rust) faucet API: auth, OTP, rate limiting, D1, and calls to the signer."
 edition.workspace = true
 license.workspace = true

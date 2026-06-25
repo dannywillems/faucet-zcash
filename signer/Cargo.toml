@@ -1,6 +1,7 @@
 [package]
 name = "faucet-signer"
 version = "0.1.0"
+publish = false
 description = "Native Zcash faucet signer: holds the seed, builds/proves/signs transparent and Orchard transactions, broadcasts to zcashd."
 edition.workspace = true
 license.workspace = true
