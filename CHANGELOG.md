@@ -22,6 +22,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Frontend: SvelteKit + Tailwind static SPA with dark/light theme, the
   email/OTP/drip flow, in-browser wasm address validation, the Pages Basic Auth
   gate, and Playwright e2e. CI gains a frontend job.
+- `faucet-signer`: native axum service skeleton (bearer-authenticated `/send`,
+  `/health`, zeroized seed + secret, server-side address re-validation). The
+  zcash_client_backend transaction engine is documented but not yet wired
+  (`/send` returns 503 until then).
+- Deploy: Cloudflare `deploy-pages` and `deploy-worker` workflows, signer
+  Dockerfile + docker-compose (with cloudflared tunnel), and a deploy runbook.
 
 ### Changed
 
