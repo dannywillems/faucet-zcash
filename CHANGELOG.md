@@ -55,5 +55,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - GitHub Actions CI (Rust fmt/clippy/test, wasm builds, `cargo-deny`) and the
   changelog, PR-hygiene, and shellcheck workflows.
+- Dependabot for cargo, npm, and github-actions (weekly, grouped).
+
+### Changed
+
+- Workspace moved to Rust edition 2024; `[workspace.dependencies]` grouped by
+  role (Zcash together) and wrapped at 80 columns.
 - CI drives all checks through Makefile targets and runs a stable + beta Rust
   matrix.
