@@ -25,8 +25,10 @@ FAUCET_NETWORK = "testnet"
 ALLOWED_EMAIL_DOMAINS = "zodl.com"
 # 1 TAZ = 100_000_000 zatoshi.
 DRIP_AMOUNT_ZAT = "100000000"
-# 24h cooldown, keyed on email AND destination address AND IP.
-COOLDOWN_SECONDS = "86400"
+# Per-request cooldown (keyed on email AND destination address AND IP).
+# 0 disables it (this faucet is used only by a few colleagues). Set a positive
+# value (e.g. 86400 for 24h) to throttle if it is ever opened up.
+COOLDOWN_SECONDS = "0"
 # OTP lifetime and attempt cap.
 OTP_TTL_SECONDS = "300"
 OTP_MAX_ATTEMPTS = "5"
