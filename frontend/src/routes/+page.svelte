@@ -340,50 +340,72 @@
       How it works
     </summary>
     <div class="mt-3 space-y-3">
+      {#snippet code(path: string)}
+        <a
+          href={`https://github.com/dannywillems/faucet-zcash/blob/main/${path}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="whitespace-nowrap font-mono text-xs text-amber-700 hover:underline dark:text-amber-400"
+        >
+          [code]
+        </a>
+      {/snippet}
       <p>
         This faucet runs the official Rust Zcash stack (librustzcash, Orchard
         0.14). It is non-custodial to you: you only enter a destination address.
-        The steps:
+        The steps (each links to its source):
       </p>
       <ol class="list-decimal space-y-2 pl-5">
         <li>
-          <span class="font-medium">Access gate.</span> The whole site is behind HTTP
-          Basic Auth to keep bots out.
+          <span class="font-medium">Access gate.</span> The whole site is behind
+          HTTP Basic Auth to keep bots out. {@render code(
+            'frontend/functions/_middleware.ts',
+          )}
         </li>
         <li>
-          <span class="font-medium">Email verification.</span> You request a one-time
-          code, sent by email (Resend); verifying it opens a session.
+          <span class="font-medium">Email verification.</span> You request a
+          one-time code, sent by email (Resend); verifying it opens a session. {@render code(
+            'worker/src/lib.rs',
+          )}
         </li>
         <li>
           <span class="font-medium">Address validation.</span> Your address is
           checked in your browser by Rust compiled to WebAssembly (the same
-          <code>zcash_address</code> logic the backend uses), then re-validated server-side.
-          Transparent and Orchard unified addresses are accepted; Sapling is not supported.
+          <code>zcash_address</code> logic the backend uses), then re-validated
+          server-side. Transparent and Orchard unified addresses are accepted;
+          Sapling is not supported.
+          {@render code('crates/faucet-addr-wasm/src/lib.rs')}
         </li>
         <li>
           <span class="font-medium">Building the transaction.</span> A backend
           signer holds the faucet seed and uses
-          <code>zcash_client_sqlite</code> to track the faucet's notes and nullifiers.
-          It selects inputs, then builds, proves (Orchard via halo2; transparent via
-          secp256k1) and signs the transaction. The browser and the edge Worker never
-          see the seed.
+          <code>zcash_client_sqlite</code> to track the faucet's notes and
+          nullifiers. It selects inputs, then builds, proves (Orchard via halo2;
+          transparent via secp256k1) and signs the transaction. The browser and
+          the edge Worker never see the seed. {@render code(
+            'signer/src/wallet.rs',
+          )}
         </li>
         <li>
-          <span class="font-medium">Automatic shielding.</span> The faucet is funded
-          by mining rewards, which arrive as transparent coinbase. Those cannot be
-          sent directly, so the signer automatically shields them into the Orchard
-          pool (after the 100-block coinbase maturity) before dripping. That is why
-          the reserves above show a transparent balance that becomes spendable shielded
-          funds.
+          <span class="font-medium">Automatic shielding.</span> The faucet is
+          funded by mining rewards, which arrive as transparent coinbase. Those
+          cannot be sent directly, so the signer automatically shields them into
+          the Orchard pool (after the 100-block coinbase maturity) before
+          dripping. That is why the reserves above show a transparent balance
+          that becomes spendable shielded funds. {@render code(
+            'deploy/faucet-maintenance.sh',
+          )}
         </li>
         <li>
-          <span class="font-medium">Broadcast.</span> The signed transaction is broadcast
-          to a Zcash testnet node over the lightwalletd protocol, and the resulting
-          txid is shown to you with an explorer link.
+          <span class="font-medium">Broadcast.</span> The signed transaction is
+          broadcast to a Zcash testnet node over the lightwalletd protocol, and
+          the resulting txid is shown to you with an explorer link. {@render code(
+            'signer/src/wallet.rs',
+          )}
         </li>
       </ol>
       <p>
-        Source:
+        Full source:
         <a
           href="https://github.com/dannywillems/faucet-zcash"
           target="_blank"
