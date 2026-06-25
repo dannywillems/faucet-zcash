@@ -1,0 +1,36 @@
+name = "faucet-zcash-api"
+main = "build/worker/shim.mjs"
+compatibility_date = "2025-05-01"
+
+# Build the Rust Worker to wasm via worker-build.
+[build]
+command = "cargo install -q worker-build --version 0.1.* && worker-build --release"
+
+# D1 database binding (system of record: users, OTP, sessions, drips).
+# database_id is filled in after `wrangler d1 create faucet-zcash`.
+[[d1_databases]]
+binding = "DB"
+database_name = "faucet-zcash"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+# Non-secret configuration. Secrets are set with `wrangler secret put`:
+#   RESEND_API_TOKEN     - Resend API key for OTP email
+#   BASIC_AUTH_B64       - base64("user:pass") for the site bot gate
+#   SIGNER_SHARED_SECRET - bearer token for the Worker -> signer call
+#   OTP_HASH_SALT        - salt for hashing OTP codes at rest
+[vars]
+FAUCET_NETWORK = "testnet"
+# 1 TAZ = 100_000_000 zatoshi.
+DRIP_AMOUNT_ZAT = "100000000"
+# 24h cooldown, keyed on email AND destination address AND IP.
+COOLDOWN_SECONDS = "86400"
+# OTP lifetime and attempt cap.
+OTP_TTL_SECONDS = "300"
+OTP_MAX_ATTEMPTS = "5"
+# Session lifetime (7 days).
+SESSION_TTL_SECONDS = "604800"
+# Signer endpoint (Cloudflare Tunnel hostname in production).
+SIGNER_URL = "https://signer.invalid/send"
+# Resend sender. Use a verified domain in production.
+RESEND_FROM = "Zcash Faucet <onboarding@resend.dev>"

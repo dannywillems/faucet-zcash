@@ -13,7 +13,10 @@ CI to catch advisories and license drift.
 | `zcash_protocol` | 0.9.0 | faucet-core | `NetworkType`, `PoolType` for validation. |
 | `serde` | 1.0.228 | faucet-core | DTO (de)serialization across layers. |
 | `wasm-bindgen` | 0.2.126 | faucet-addr-wasm | Browser bindings for address validation. |
-| `worker` (workers-rs) | pending | worker | Cloudflare Worker runtime + D1 binding. |
+| `worker` (workers-rs) | 0.8.5 (feature `d1`) | worker | Cloudflare Worker runtime + D1 binding. |
+| `getrandom` | 0.3 (feature `wasm_js`) | worker | CSPRNG for OTP codes and session tokens. |
+| `sha2`, `hex` | 0.11 / 0.4 | worker | Hash OTP codes and session tokens at rest. |
+| `serde_json` | 1.0 | worker | JSON request/response bodies. |
 | `zcash_client_backend` | pending | signer | Wallet engine: note scanning, proposals, proving. |
 | `zcash_client_sqlite` | pending | signer | Wallet data store (notes, witnesses, tree). |
 | `zcash_primitives` | pending | signer | Transparent tx building, primitives. |

@@ -1,0 +1,6 @@
+# getrandom 0.3 needs an explicit backend on wasm32-unknown-unknown. The
+# Cloudflare Worker uses the Web Crypto `getRandomValues` backend. This cfg only
+# affects wasm32 builds; the native signer is unaffected. Crates that do not use
+# getrandom (faucet-core, faucet-addr-wasm) are unaffected by the flag.
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']

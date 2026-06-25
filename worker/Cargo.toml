@@ -17,5 +17,9 @@ all = "warn"
 
 [dependencies]
 faucet-core = { path = "../crates/faucet-core" }
-# worker (workers-rs), serde, serde_json are added after dependency approval is
-# recorded in dependencies.md.
+getrandom = { version = "0.3", features = ["wasm_js"] }
+hex = "0.4.3"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+sha2 = "0.11.0"
+worker = { version = "0.8.5", features = ["d1"] }

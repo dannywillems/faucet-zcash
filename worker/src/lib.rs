@@ -1,14 +1,494 @@
 //! Cloudflare Worker faucet API (Rust / workers-rs).
 //!
-//! Thin authenticated edge API: HTTP Basic Auth bot gate, email OTP via Resend,
-//! session management, rate limiting and cooldown backed by D1, and the
-//! authenticated call to the signer for the actual transaction. It never holds
-//! the seed and never builds transactions.
-//!
-//! The `#[event(fetch)]` handler and routes land in the Worker task; this stub
-//! keeps the crate building while the dependency set is approved.
+//! A thin authenticated edge API backed by D1. It enforces an HTTP Basic Auth
+//! bot gate, email OTP via Resend, sessioned access, and a per-email/address/IP
+//! cooldown, then delegates the actual transaction to the signer service. It
+//! never holds the seed and never builds transactions.
 
-#![forbid(unsafe_code)]
+use faucet_core::{
+    validate_destination, DripResponse, Network, SignerSendRequest, SignerSendResponse,
+};
+use serde::Deserialize;
+use sha2::{Digest, Sha256};
+use worker::wasm_bindgen::JsValue;
+use worker::*;
 
-// Re-export the shared vocabulary so the Worker and signer agree on types.
-pub use faucet_core::{Network, Pool};
+// ---------------------------------------------------------------------------
+// Entry point and routing
+// ---------------------------------------------------------------------------
+
+#[event(fetch)]
+async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
+    Router::new()
+        .get("/health", |_req, _ctx| Response::ok("ok"))
+        .post_async("/auth/send-otp", handle_send_otp)
+        .post_async("/auth/verify-otp", handle_verify_otp)
+        .get_async("/faucet/status", handle_status)
+        .post_async("/faucet/drip", handle_drip)
+        .run(req, env)
+        .await
+}
+
+// ---------------------------------------------------------------------------
+// Request/response payloads
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct SendOtpBody {
+    email: String,
+}
+
+#[derive(Deserialize)]
+struct VerifyOtpBody {
+    email: String,
+    code: String,
+}
+
+#[derive(Deserialize)]
+struct DripBody {
+    address: String,
+}
+
+// D1 row helpers.
+#[derive(Deserialize)]
+struct CountRow {
+    n: i64,
+}
+
+#[derive(Deserialize)]
+struct OtpRow {
+    id: i64,
+    code_hash: String,
+    attempts: i64,
+}
+
+#[derive(Deserialize)]
+struct SessionRow {
+    email: String,
+}
+
+#[derive(Deserialize)]
+struct LastDripRow {
+    created_at: i64,
+}
+
+// ---------------------------------------------------------------------------
+// Handlers
+// ---------------------------------------------------------------------------
+
+async fn handle_send_otp(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    if let Some(resp) = require_basic_auth(&req, &ctx)? {
+        return Ok(resp);
+    }
+    let body: SendOtpBody = match req.json().await {
+        Ok(b) => b,
+        Err(_) => return error_json(400, "Invalid request body."),
+    };
+    let email = body.email.trim().to_lowercase();
+    if !is_plausible_email(&email) {
+        return error_json(400, "Enter a valid email address.");
+    }
+
+    let db = ctx.env.d1("DB")?;
+    let now = now_secs();
+    let ttl: i64 = var_i64(&ctx, "OTP_TTL_SECONDS", 300);
+
+    // Throttle rapid resends: refuse if an unexpired code was issued recently.
+    let recent: Option<CountRow> = db
+        .prepare("SELECT COUNT(*) AS n FROM otp_codes WHERE email = ?1 AND consumed = 0 AND created_at > ?2")
+        .bind(&[js(&email), jsi(now - 30)])?
+        .first(None)
+        .await?;
+    if recent.map(|r| r.n).unwrap_or(0) > 0 {
+        return error_json(429, "A code was just sent. Please wait a moment.");
+    }
+
+    let code = gen_otp()?;
+    let salt = secret(&ctx, "OTP_HASH_SALT")?;
+    let code_hash = sha256_hex(&salt, &code);
+
+    db.prepare("INSERT OR IGNORE INTO users (email, created_at) VALUES (?1, ?2)")
+        .bind(&[js(&email), jsi(now)])?
+        .run()
+        .await?;
+    db.prepare("INSERT INTO otp_codes (email, code_hash, expires_at, attempts, consumed, created_at) VALUES (?1, ?2, ?3, 0, 0, ?4)")
+        .bind(&[js(&email), js(&code_hash), jsi(now + ttl), jsi(now)])?
+        .run()
+        .await?;
+
+    let token = secret(&ctx, "RESEND_API_TOKEN")?;
+    let from = var_str(&ctx, "RESEND_FROM", "onboarding@resend.dev");
+    send_otp_email(&token, &from, &email, &code).await?;
+
+    Response::from_json(&serde_json::json!({ "message": "Code sent." }))
+}
+
+async fn handle_verify_otp(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    if let Some(resp) = require_basic_auth(&req, &ctx)? {
+        return Ok(resp);
+    }
+    let body: VerifyOtpBody = match req.json().await {
+        Ok(b) => b,
+        Err(_) => return error_json(400, "Invalid request body."),
+    };
+    let email = body.email.trim().to_lowercase();
+    let code = body.code.trim().to_string();
+
+    let db = ctx.env.d1("DB")?;
+    let now = now_secs();
+    let max_attempts: i64 = var_i64(&ctx, "OTP_MAX_ATTEMPTS", 5);
+
+    let row: Option<OtpRow> = db
+        .prepare("SELECT id, code_hash, attempts FROM otp_codes WHERE email = ?1 AND consumed = 0 AND expires_at > ?2 ORDER BY created_at DESC LIMIT 1")
+        .bind(&[js(&email), jsi(now)])?
+        .first(None)
+        .await?;
+    let Some(row) = row else {
+        return error_json(401, "No valid code. Request a new one.");
+    };
+    if row.attempts >= max_attempts {
+        return error_json(429, "Too many attempts. Request a new code.");
+    }
+
+    let salt = secret(&ctx, "OTP_HASH_SALT")?;
+    let provided_hash = sha256_hex(&salt, &code);
+    if !ct_eq(provided_hash.as_bytes(), row.code_hash.as_bytes()) {
+        db.prepare("UPDATE otp_codes SET attempts = attempts + 1 WHERE id = ?1")
+            .bind(&[jsi(row.id)])?
+            .run()
+            .await?;
+        return error_json(401, "Incorrect code.");
+    }
+
+    // Correct: consume the code and open a session.
+    db.prepare("UPDATE otp_codes SET consumed = 1 WHERE id = ?1")
+        .bind(&[jsi(row.id)])?
+        .run()
+        .await?;
+    let session_ttl: i64 = var_i64(&ctx, "SESSION_TTL_SECONDS", 604_800);
+    let token = gen_session_token()?;
+    let token_hash = sha256_hex("session", &token);
+    db.prepare(
+        "INSERT INTO sessions (token_hash, email, expires_at, created_at) VALUES (?1, ?2, ?3, ?4)",
+    )
+    .bind(&[
+        js(&token_hash),
+        js(&email),
+        jsi(now + session_ttl),
+        jsi(now),
+    ])?
+    .run()
+    .await?;
+
+    let cookie = format!(
+        "session={token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age={session_ttl}"
+    );
+    let headers = Headers::new();
+    headers.set("Set-Cookie", &cookie)?;
+    Ok(Response::from_json(&serde_json::json!({ "message": "Signed in." }))?.with_headers(headers))
+}
+
+async fn handle_status(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    if let Some(resp) = require_basic_auth(&req, &ctx)? {
+        return Ok(resp);
+    }
+    let Some(email) = session_email(&req, &ctx).await? else {
+        return error_json(401, "Not signed in.");
+    };
+    let db = ctx.env.d1("DB")?;
+    let cooldown: i64 = var_i64(&ctx, "COOLDOWN_SECONDS", 86_400);
+    let now = now_secs();
+    let last: Option<LastDripRow> = db
+        .prepare("SELECT created_at FROM drips WHERE email = ?1 ORDER BY created_at DESC LIMIT 1")
+        .bind(&[js(&email)])?
+        .first(None)
+        .await?;
+    let next_eligible = last.map(|r| r.created_at + cooldown).unwrap_or(0);
+    Response::from_json(&serde_json::json!({
+        "email": email,
+        "eligible": now >= next_eligible,
+        "next_eligible_at": next_eligible,
+    }))
+}
+
+async fn handle_drip(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    if let Some(resp) = require_basic_auth(&req, &ctx)? {
+        return Ok(resp);
+    }
+    let Some(email) = session_email(&req, &ctx).await? else {
+        return error_json(401, "Not signed in.");
+    };
+    let ip = req.headers().get("CF-Connecting-IP")?.unwrap_or_default();
+    let body: DripBody = match req.json().await {
+        Ok(b) => b,
+        Err(_) => return error_json(400, "Invalid request body."),
+    };
+
+    // Re-validate the address server-side (the client validates too).
+    let valid = match validate_destination(&body.address, Network::Testnet) {
+        Ok(v) => v,
+        Err(rejection) => return error_json(400, rejection.message()),
+    };
+    let address = body.address.trim().to_string();
+
+    let db = ctx.env.d1("DB")?;
+    let now = now_secs();
+    let cooldown: i64 = var_i64(&ctx, "COOLDOWN_SECONDS", 86_400);
+    let recent: Option<CountRow> = db
+        .prepare("SELECT COUNT(*) AS n FROM drips WHERE created_at > ?1 AND (email = ?2 OR dest_address = ?3 OR ip = ?4)")
+        .bind(&[jsi(now - cooldown), js(&email), js(&address), js(&ip)])?
+        .first(None)
+        .await?;
+    if recent.map(|r| r.n).unwrap_or(0) > 0 {
+        return error_json(429, "You already received funds recently. Try again later.");
+    }
+
+    let amount_zat: u64 = var_i64(&ctx, "DRIP_AMOUNT_ZAT", 100_000_000) as u64;
+    let txid = call_signer(&ctx, &address, amount_zat, valid.pool).await?;
+
+    db.prepare("INSERT INTO drips (email, dest_address, pool, amount_zat, txid, ip, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")
+        .bind(&[
+            js(&email),
+            js(&address),
+            js(pool_str(valid.pool)),
+            jsi(amount_zat as i64),
+            js(&txid),
+            js(&ip),
+            jsi(now),
+        ])?
+        .run()
+        .await?;
+
+    Response::from_json(&DripResponse {
+        txid,
+        pool: valid.pool,
+        amount_zat,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Signer call
+// ---------------------------------------------------------------------------
+
+async fn call_signer(
+    ctx: &RouteContext<()>,
+    address: &str,
+    amount_zat: u64,
+    pool: faucet_core::Pool,
+) -> Result<String> {
+    let url = var_str(ctx, "SIGNER_URL", "");
+    let secret = secret(ctx, "SIGNER_SHARED_SECRET")?;
+    let payload = SignerSendRequest {
+        address: address.to_string(),
+        amount_zat,
+        pool,
+    };
+    let body = serde_json::to_string(&payload).map_err(|e| Error::RustError(e.to_string()))?;
+
+    let headers = Headers::new();
+    headers.set("Authorization", &format!("Bearer {secret}"))?;
+    headers.set("Content-Type", "application/json")?;
+    let mut init = RequestInit::new();
+    init.with_method(Method::Post)
+        .with_headers(headers)
+        .with_body(Some(JsValue::from_str(&body)));
+    let request = Request::new_with_init(&url, &init)?;
+
+    let mut resp = Fetch::Request(request).send().await?;
+    if resp.status_code() != 200 {
+        return Err(Error::RustError(format!(
+            "signer returned status {}",
+            resp.status_code()
+        )));
+    }
+    let parsed: SignerSendResponse = resp.json().await?;
+    Ok(parsed.txid)
+}
+
+// ---------------------------------------------------------------------------
+// Resend email
+// ---------------------------------------------------------------------------
+
+async fn send_otp_email(token: &str, from: &str, to: &str, code: &str) -> Result<()> {
+    let html = format!(
+        "<h1>Your Zcash faucet code</h1><p>Your code is: <strong>{code}</strong></p>\
+         <p>It expires in 5 minutes.</p>"
+    );
+    let payload = serde_json::json!({
+        "from": from,
+        "to": [to],
+        "subject": "Your Zcash faucet code",
+        "html": html,
+    });
+    let body = serde_json::to_string(&payload).map_err(|e| Error::RustError(e.to_string()))?;
+
+    let headers = Headers::new();
+    headers.set("Authorization", &format!("Bearer {token}"))?;
+    headers.set("Content-Type", "application/json")?;
+    let mut init = RequestInit::new();
+    init.with_method(Method::Post)
+        .with_headers(headers)
+        .with_body(Some(JsValue::from_str(&body)));
+    let request = Request::new_with_init("https://api.resend.com/emails", &init)?;
+
+    let resp = Fetch::Request(request).send().await?;
+    if resp.status_code() >= 300 {
+        // Do not echo the provider response body (it may contain the address).
+        return Err(Error::RustError(format!(
+            "email provider returned status {}",
+            resp.status_code()
+        )));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Auth helpers
+// ---------------------------------------------------------------------------
+
+/// Returns `Some(401)` if the shared HTTP Basic Auth gate fails, else `None`.
+fn require_basic_auth(req: &Request, ctx: &RouteContext<()>) -> Result<Option<Response>> {
+    let expected_b64 = match ctx.env.secret("BASIC_AUTH_B64") {
+        Ok(s) => s.to_string(),
+        // If the gate is unconfigured, fail closed.
+        Err(_) => return Ok(Some(unauthorized_basic()?)),
+    };
+    let provided = req
+        .headers()
+        .get("Authorization")?
+        .and_then(|h| h.strip_prefix("Basic ").map(str::to_string));
+    match provided {
+        Some(b64) if ct_eq(b64.as_bytes(), expected_b64.as_bytes()) => Ok(None),
+        _ => Ok(Some(unauthorized_basic()?)),
+    }
+}
+
+fn unauthorized_basic() -> Result<Response> {
+    let headers = Headers::new();
+    headers.set("WWW-Authenticate", "Basic realm=\"faucet\"")?;
+    Ok(Response::error("Unauthorized", 401)?.with_headers(headers))
+}
+
+/// Resolve the signed-in email from the `session` cookie, if the session is
+/// valid and unexpired.
+async fn session_email(req: &Request, ctx: &RouteContext<()>) -> Result<Option<String>> {
+    let Some(token) = cookie_value(req, "session")? else {
+        return Ok(None);
+    };
+    let token_hash = sha256_hex("session", &token);
+    let db = ctx.env.d1("DB")?;
+    let row: Option<SessionRow> = db
+        .prepare("SELECT email FROM sessions WHERE token_hash = ?1 AND expires_at > ?2")
+        .bind(&[js(&token_hash), jsi(now_secs())])?
+        .first(None)
+        .await?;
+    Ok(row.map(|r| r.email))
+}
+
+fn cookie_value(req: &Request, name: &str) -> Result<Option<String>> {
+    let Some(cookies) = req.headers().get("Cookie")? else {
+        return Ok(None);
+    };
+    for part in cookies.split(';') {
+        let part = part.trim();
+        if let Some(rest) = part.strip_prefix(&format!("{name}=")) {
+            return Ok(Some(rest.to_string()));
+        }
+    }
+    Ok(None)
+}
+
+// ---------------------------------------------------------------------------
+// Small utilities
+// ---------------------------------------------------------------------------
+
+fn now_secs() -> i64 {
+    (Date::now().as_millis() / 1000) as i64
+}
+
+fn rand_bytes<const N: usize>() -> Result<[u8; N]> {
+    let mut buf = [0u8; N];
+    getrandom::fill(&mut buf).map_err(|e| Error::RustError(e.to_string()))?;
+    Ok(buf)
+}
+
+fn gen_otp() -> Result<String> {
+    let b = rand_bytes::<4>()?;
+    let n = u32::from_le_bytes(b) % 1_000_000;
+    Ok(format!("{n:06}"))
+}
+
+fn gen_session_token() -> Result<String> {
+    let b = rand_bytes::<32>()?;
+    Ok(hex::encode(b))
+}
+
+fn sha256_hex(salt: &str, data: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(salt.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(data.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+/// Constant-time byte comparison (avoids leaking match length via timing).
+fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+fn is_plausible_email(email: &str) -> bool {
+    let bytes = email.as_bytes();
+    email.len() >= 3
+        && email.len() <= 254
+        && email.matches('@').count() == 1
+        && !email.starts_with('@')
+        && !email.ends_with('@')
+        && email.contains('.')
+        && !bytes.iter().any(u8::is_ascii_whitespace)
+}
+
+fn pool_str(pool: faucet_core::Pool) -> &'static str {
+    match pool {
+        faucet_core::Pool::Transparent => "transparent",
+        faucet_core::Pool::Orchard => "orchard",
+    }
+}
+
+fn error_json(status: u16, msg: &str) -> Result<Response> {
+    Ok(Response::from_json(&serde_json::json!({ "error": msg }))?.with_status(status))
+}
+
+// Bind helpers for D1 prepared statements.
+fn js(s: &str) -> JsValue {
+    JsValue::from_str(s)
+}
+
+fn jsi(n: i64) -> JsValue {
+    JsValue::from_f64(n as f64)
+}
+
+fn secret(ctx: &RouteContext<()>, name: &str) -> Result<String> {
+    Ok(ctx.env.secret(name)?.to_string())
+}
+
+fn var_str(ctx: &RouteContext<()>, name: &str, default: &str) -> String {
+    ctx.env
+        .var(name)
+        .map(|v| v.to_string())
+        .unwrap_or_else(|_| default.to_string())
+}
+
+fn var_i64(ctx: &RouteContext<()>, name: &str, default: i64) -> i64 {
+    ctx.env
+        .var(name)
+        .ok()
+        .and_then(|v| v.to_string().parse::<i64>().ok())
+        .unwrap_or(default)
+}
