@@ -34,8 +34,10 @@ impl Config {
     pub fn from_env() -> Result<Self, String> {
         let bind = std::env::var("SIGNER_BIND").unwrap_or_else(|_| "127.0.0.1:8080".to_string());
         let shared_secret = Zeroizing::new(required("SIGNER_SHARED_SECRET")?);
+        // Default to the public testnet lightwalletd used by the zodl apps;
+        // override with a local zaino via LIGHTWALLETD_URL.
         let lightwalletd_url = std::env::var("LIGHTWALLETD_URL")
-            .unwrap_or_else(|_| "http://127.0.0.1:8137".to_string());
+            .unwrap_or_else(|_| "https://testnet.zec.rocks:443".to_string());
         let db_path =
             std::env::var("SIGNER_DB_PATH").unwrap_or_else(|_| "faucet-wallet.db".to_string());
         let birthday_height = std::env::var("SIGNER_BIRTHDAY_HEIGHT")

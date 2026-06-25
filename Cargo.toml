@@ -48,7 +48,7 @@ wasm-bindgen = "0.2.126"
 # Signer HTTP service and async runtime (tokio is in the table section below)
 async-trait = "0.1"
 axum = "0.8.9"
-tonic = "0.14"
+tonic = { version = "0.14", features = ["tls-ring", "tls-webpki-roots"] }
 tower = "0.5"
 
 # Serialization
@@ -96,6 +96,7 @@ rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23"
 default-features = false
 features = [
     "lightwalletd-tonic-transport",
+    "lightwalletd-tonic-tls-webpki-roots",
     "orchard",
     "sync",
     "transparent-inputs",

@@ -29,6 +29,8 @@ allow = [
     "Unicode-DFS-2016",
     "Zlib",
     "CC0-1.0",
+    # webpki-roots (Mozilla CA bundle, via tonic tls-webpki-roots).
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.9
 

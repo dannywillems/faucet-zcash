@@ -141,13 +141,30 @@ impl Wallet {
         self.ensure_account_in(&mut db)
     }
 
-    /// Connect to the configured zaino (lightwalletd gRPC).
+    /// Connect to the configured lightwalletd gRPC (local zaino, or a public
+    /// server such as testnet.zec.rocks). `https://` endpoints use TLS.
     async fn connect(&self) -> Result<CompactTxStreamerClient<Channel>, SignerError> {
-        let channel = Channel::from_shared(self.lightwalletd_url.clone())
-            .map_err(|e| SignerError::Internal(format!("bad lightwalletd url: {e}")))?
+        let url = self.lightwalletd_url.clone();
+        let mut endpoint = Channel::from_shared(url.clone())
+            .map_err(|e| SignerError::Internal(format!("bad lightwalletd url: {e}")))?;
+        if url.starts_with("https://") {
+            let host = url
+                .trim_start_matches("https://")
+                .split(['/', ':'])
+                .next()
+                .unwrap_or_default()
+                .to_string();
+            let tls = tonic::transport::ClientTlsConfig::new()
+                .domain_name(host)
+                .with_webpki_roots();
+            endpoint = endpoint
+                .tls_config(tls)
+                .map_err(|e| SignerError::Internal(format!("tls config: {e}")))?;
+        }
+        let channel = endpoint
             .connect()
             .await
-            .map_err(|e| SignerError::Internal(format!("connect to zaino: {e}")))?;
+            .map_err(|e| SignerError::Internal(format!("connect to lightwalletd: {e}")))?;
         Ok(CompactTxStreamerClient::new(channel))
     }
 
