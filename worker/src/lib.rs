@@ -19,12 +19,15 @@ use worker::*;
 
 #[event(fetch)]
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
+    // Routes are mounted under /api so the Worker can share one origin with the
+    // Pages-hosted frontend (a Cloudflare route maps `<domain>/api/*` to this
+    // Worker). Same origin makes the Basic Auth gate and session cookie work.
     Router::new()
-        .get("/health", |_req, _ctx| Response::ok("ok"))
-        .post_async("/auth/send-otp", handle_send_otp)
-        .post_async("/auth/verify-otp", handle_verify_otp)
-        .get_async("/faucet/status", handle_status)
-        .post_async("/faucet/drip", handle_drip)
+        .get("/api/health", |_req, _ctx| Response::ok("ok"))
+        .post_async("/api/auth/send-otp", handle_send_otp)
+        .post_async("/api/auth/verify-otp", handle_verify_otp)
+        .get_async("/api/faucet/status", handle_status)
+        .post_async("/api/faucet/drip", handle_drip)
         .run(req, env)
         .await
 }

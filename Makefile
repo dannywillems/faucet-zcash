@@ -54,8 +54,9 @@ build-wasm: ## Build both wasm crates (wasm32 target)
 		--target wasm32-unknown-unknown
 
 .PHONY: build-wasm-addr
-build-wasm-addr: ## Build the frontend address-validator wasm (wasm-pack)
-	cd crates/faucet-addr-wasm && wasm-pack build --target web --release
+build-wasm-addr: ## Build the address-validator wasm into the frontend
+	cd crates/faucet-addr-wasm && wasm-pack build --target web --release \
+		--out-dir ../../frontend/src/lib/wasm
 
 .PHONY: build-worker
 build-worker: ## Build the Cloudflare Worker (wasm32)
@@ -72,12 +73,16 @@ frontend-dev: ## Run the SvelteKit dev server
 	cd frontend && npm run dev
 
 .PHONY: frontend-build
-frontend-build: ## Build the frontend for production
+frontend-build: build-wasm-addr ## Build the frontend for production
 	cd frontend && npm run build
 
 .PHONY: frontend-check
-frontend-check: ## Type-check the frontend (svelte-check)
+frontend-check: build-wasm-addr ## Type-check the frontend (svelte-check)
 	cd frontend && npm run check
+
+.PHONY: frontend-check-format
+frontend-check-format: ## Check frontend formatting (prettier)
+	cd frontend && npm run check-format
 
 ## --- Shell / docs lint ---
 
