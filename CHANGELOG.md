@@ -42,6 +42,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the initial scan.
 - Signer supports TLS lightwalletd endpoints and defaults to
   `https://testnet.zec.rocks:443` (overridable to a local zaino).
+- Signer `/balance` (faucet unified address + per-pool balances) and `/shield`
+  (shields transparent funds into Orchard so they can be dripped).
 - Server-side logout (`/api/auth/logout`) and a session-aware frontend that
   restores the signed-in state on load and offers a log-out control.
 - Frontend `/api/*` is proxied to the Worker by a Pages Function (same origin),
