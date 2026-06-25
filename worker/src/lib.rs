@@ -291,7 +291,32 @@ async fn handle_drip(mut req: Request, ctx: RouteContext<()>) -> Result<Response
     }
 
     let amount_zat: u64 = var_i64(&ctx, "DRIP_AMOUNT_ZAT", 100_000_000) as u64;
-    let txid = call_signer(&ctx, &address, amount_zat, valid.pool).await?;
+
+    // The transaction signer runs on a separate host, reached over a Cloudflare
+    // Tunnel. If that tunnel is not wired up yet (placeholder SIGNER_URL), say
+    // so explicitly instead of returning an opaque 500: the rest of the faucet
+    // (auth, validation, the live balance above) works without it.
+    let signer_base = var_str(&ctx, "SIGNER_URL", "");
+    if signer_base.is_empty() || signer_base.contains("signer.invalid") {
+        return error_json(
+            503,
+            "Sending is not available on this deployment yet: the transaction \
+             signer (which holds the seed and builds the transaction) is not \
+             connected. It runs on a separate host reached over a Cloudflare \
+             Tunnel, and SIGNER_URL still points at a placeholder. The balance \
+             above is live; once the tunnel is configured, drips will work.",
+        );
+    }
+    let txid = match call_signer(&ctx, &address, amount_zat, valid.pool).await {
+        Ok(t) => t,
+        Err(_) => {
+            return error_json(
+                502,
+                "Could not reach the transaction signer (it may be offline or \
+                 still syncing). Please try again in a few minutes.",
+            );
+        }
+    };
 
     db.prepare("INSERT INTO drips (email, dest_address, pool, amount_zat, txid, ip, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")
         .bind(&[
