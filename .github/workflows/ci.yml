@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust (fmt, clippy, test, wasm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Clippy (native crates)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy (wasm crates)
+        run: >
+          cargo clippy -p faucet-addr-wasm -p faucet-worker
+          --target wasm32-unknown-unknown -- -D warnings
+      - name: Test (native)
+        run: cargo test
+      - name: Build wasm crates
+        run: >
+          cargo build -p faucet-addr-wasm -p faucet-worker
+          --target wasm32-unknown-unknown
+
+  deny:
+    name: cargo deny (advisories, licenses, bans)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.96.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: Run cargo deny
+        run: cargo deny check
