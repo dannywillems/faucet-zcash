@@ -13,7 +13,10 @@ jobs:
     name: CHANGELOG.md has an entry
     runs-on: ubuntu-latest
     steps:
+      # Dependency bumps (Dependabot) do not carry a changelog entry; skip the
+      # check for them so the job still reports green. Human PRs are unaffected.
       - uses: tarides/changelog-check-action@v3
+        if: ${{ github.actor != 'dependabot[bot]' }}
         with:
           changelog: CHANGELOG.md
 
