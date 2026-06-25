@@ -29,6 +29,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .post_async("/api/auth/verify-otp", handle_verify_otp)
         .post_async("/api/auth/logout", handle_logout)
         .get_async("/api/faucet/status", handle_status)
+        .get_async("/api/faucet/stats", handle_stats)
         .get_async("/api/faucet/balance", handle_faucet_balance)
         .post_async("/api/internal/balance", handle_ingest_balance)
         .post_async("/api/faucet/drip", handle_drip)
@@ -76,6 +77,21 @@ struct SessionRow {
 
 #[derive(Deserialize)]
 struct LastDripRow {
+    created_at: i64,
+}
+
+#[derive(Deserialize)]
+struct StatsRow {
+    n: i64,
+    total: i64,
+}
+
+#[derive(Deserialize)]
+struct DripHistRow {
+    dest_address: String,
+    pool: String,
+    amount_zat: i64,
+    txid: String,
     created_at: i64,
 }
 
@@ -341,6 +357,56 @@ async fn handle_drip(mut req: Request, ctx: RouteContext<()>) -> Result<Response
 // ---------------------------------------------------------------------------
 // Signer call
 // ---------------------------------------------------------------------------
+
+/// Public faucet stats: total drips, total dispensed, and the most recent
+/// drips (destination masked). Read from the `drips` table; behind the Basic
+/// Auth gate, no session needed.
+async fn handle_stats(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    if let Some(resp) = require_basic_auth(&req, &ctx)? {
+        return Ok(resp);
+    }
+    let db = ctx.env.d1("DB")?;
+    let agg: Option<StatsRow> = db
+        .prepare("SELECT COUNT(*) AS n, COALESCE(SUM(amount_zat), 0) AS total FROM drips")
+        .first(None)
+        .await?;
+    let recent = db
+        .prepare(
+            "SELECT dest_address, pool, amount_zat, txid, created_at \
+             FROM drips ORDER BY created_at DESC LIMIT 10",
+        )
+        .all()
+        .await?;
+    let rows = recent.results::<DripHistRow>()?;
+    let (count, total) = agg.map(|a| (a.n, a.total)).unwrap_or((0, 0));
+    let recent_json: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|r| {
+            serde_json::json!({
+                "address": mask_addr(&r.dest_address),
+                "pool": r.pool,
+                "amount_zat": r.amount_zat,
+                "txid": r.txid,
+                "created_at": r.created_at,
+            })
+        })
+        .collect();
+    Response::from_json(&serde_json::json!({
+        "count": count,
+        "total_zat": total,
+        "recent": recent_json,
+    }))
+}
+
+/// Mask a destination address for public display (keep the ends, hide the
+/// middle). Zcash addresses are ASCII, so byte slicing is char-safe.
+fn mask_addr(a: &str) -> String {
+    if a.len() <= 18 {
+        a.to_string()
+    } else {
+        format!("{}...{}", &a[..12], &a[a.len() - 6..])
+    }
+}
 
 /// Public faucet reserves (behind the Basic Auth gate, no session needed).
 /// Served from the cached D1 snapshot pushed by the signer host, so it works

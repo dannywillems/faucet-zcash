@@ -1,16 +1,28 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { api, ApiError, type DripResult, type FaucetBalance } from '$lib/api';
+  import {
+    api,
+    ApiError,
+    type DripResult,
+    type FaucetBalance,
+    type FaucetStats,
+  } from '$lib/api';
   import { validateAddress, type AddressCheck } from '$lib/wasm-validator';
 
-  // Faucet reserves, fetched on load (public; behind the access gate).
+  // Faucet reserves and recent activity, fetched on load (behind the gate).
   let balance = $state<FaucetBalance | null>(null);
+  let stats = $state<FaucetStats | null>(null);
 
   // Format zatoshis as TAZ (testnet ZEC); 1 TAZ = 100_000_000 zat.
   function taz(zat: number): string {
     return (zat / 100_000_000).toLocaleString(undefined, {
       maximumFractionDigits: 8,
     });
+  }
+
+  // Unix seconds -> local short date/time.
+  function fmtTime(secs: number): string {
+    return new Date(secs * 1000).toLocaleString();
   }
 
   type Step = 'email' | 'otp' | 'faucet';
@@ -46,7 +58,21 @@
     } catch {
       balance = null;
     }
+    try {
+      stats = await api.stats();
+    } catch {
+      stats = null;
+    }
   });
+
+  // Refresh reserves + recent activity (e.g. after a successful drip).
+  async function refreshStats() {
+    try {
+      [balance, stats] = await Promise.all([api.balance(), api.stats()]);
+    } catch {
+      // best effort
+    }
+  }
 
   async function logout() {
     busy = true;
@@ -116,6 +142,7 @@
     busy = true;
     try {
       drip = await api.drip(address.trim());
+      await refreshStats();
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Something went wrong.';
     } finally {
@@ -329,6 +356,39 @@
       {/if}
     {/if}
   </div>
+
+  {#if stats && stats.count > 0}
+    <div
+      class="rounded-lg border border-zinc-200 bg-white p-4 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+    >
+      <div class="mb-3 flex items-center justify-between">
+        <span class="font-medium">Recent activity</span>
+        <span class="text-xs text-zinc-500 dark:text-zinc-400">
+          {stats.count} drips | {taz(stats.total_zat)} TAZ total
+        </span>
+      </div>
+      <ul class="space-y-2">
+        {#each stats.recent as d (d.txid)}
+          <li class="flex items-center justify-between gap-3">
+            <a
+              href={`${explorerBase}${d.txid}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="truncate font-mono text-xs text-amber-700 hover:underline dark:text-amber-400"
+              title={d.address}
+            >
+              {d.address}
+            </a>
+            <span
+              class="whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400"
+            >
+              {taz(d.amount_zat)} TAZ | {fmtTime(d.created_at)}
+            </span>
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
 
   <details
     class="rounded-lg border border-zinc-200 bg-white p-4 text-sm text-zinc-600 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"

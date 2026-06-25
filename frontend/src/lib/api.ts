@@ -18,6 +18,20 @@ export interface FaucetStatus {
   next_eligible_at: number;
 }
 
+export interface DripHistory {
+  address: string;
+  pool: string;
+  amount_zat: number;
+  txid: string;
+  created_at: number;
+}
+
+export interface FaucetStats {
+  count: number;
+  total_zat: number;
+  recent: DripHistory[];
+}
+
 export interface FaucetBalance {
   unified_address: string;
   chain_tip: number;
@@ -116,6 +130,9 @@ export const api = {
   },
   balance(): Promise<FaucetBalance> {
     return request('/faucet/balance', 'GET');
+  },
+  stats(): Promise<FaucetStats> {
+    return request('/faucet/stats', 'GET');
   },
   drip(address: string): Promise<DripResult> {
     return request('/faucet/drip', 'POST', { address });
