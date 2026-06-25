@@ -34,6 +34,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - All crate dependencies are centralized in `[workspace.dependencies]` and
   referenced from member crates with `{ workspace = true }`.
 
+### Security
+
+- Pin transitive `cookie` to `>=0.7.2` via an npm override to clear a
+  low-severity advisory pulled in by `@sveltejs/kit`.
+
 ### Infrastructure
 
 - GitHub Actions CI (Rust fmt/clippy/test, wasm builds, `cargo-deny`) and the
