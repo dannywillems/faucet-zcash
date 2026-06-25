@@ -91,6 +91,11 @@ async fn handle_send_otp(mut req: Request, ctx: RouteContext<()>) -> Result<Resp
     if !is_plausible_email(&email) {
         return error_json(400, "Enter a valid email address.");
     }
+    // Restrict OTP recipients to an allowlist of email domains.
+    let allowed = var_str(&ctx, "ALLOWED_EMAIL_DOMAINS", "zodl.com");
+    if !email_domain_allowed(&email, &allowed) {
+        return error_json(403, "This email domain is not allowed.");
+    }
 
     let db = ctx.env.d1("DB")?;
     let now = now_secs();
@@ -455,6 +460,16 @@ fn is_plausible_email(email: &str) -> bool {
         && !email.ends_with('@')
         && email.contains('.')
         && !bytes.iter().any(u8::is_ascii_whitespace)
+}
+
+/// Whether the email's domain is in the comma-separated allowlist.
+fn email_domain_allowed(email: &str, allowed_csv: &str) -> bool {
+    let domain = email.rsplit('@').next().unwrap_or("");
+    allowed_csv
+        .split(',')
+        .map(str::trim)
+        .filter(|d| !d.is_empty())
+        .any(|d| d.eq_ignore_ascii_case(domain))
 }
 
 fn pool_str(pool: faucet_core::Pool) -> &'static str {

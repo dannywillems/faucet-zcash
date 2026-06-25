@@ -21,6 +21,8 @@ migrations_dir = "migrations"
 #   OTP_HASH_SALT        - salt for hashing OTP codes at rest
 [vars]
 FAUCET_NETWORK = "testnet"
+# Comma-separated allowlist of email domains permitted to request an OTP.
+ALLOWED_EMAIL_DOMAINS = "zodl.com"
 # 1 TAZ = 100_000_000 zatoshi.
 DRIP_AMOUNT_ZAT = "100000000"
 # 24h cooldown, keyed on email AND destination address AND IP.
