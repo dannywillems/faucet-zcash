@@ -8,11 +8,13 @@ pub mod wallet;
 
 use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::HeaderMap;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use faucet_core::{Network, SignerSendRequest, SignerSendResponse, validate_destination};
+use faucet_core::{
+    FaucetBalanceResponse, Network, SignerSendRequest, SignerSendResponse, validate_destination,
+};
 use zeroize::Zeroizing;
 
 use crate::error::SignerError;
@@ -71,17 +73,20 @@ async fn handle_info(
 async fn handle_balance(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, SignerError> {
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<FaucetBalanceResponse>, SignerError> {
     authorize(&headers, &state.shared_secret)?;
-    let s = state.wallet.summary().await?;
-    Ok(Json(serde_json::json!({
-        "unified_address": s.unified_address,
-        "chain_tip": s.chain_tip,
-        "fully_scanned": s.fully_scanned,
-        "orchard_spendable_zat": s.orchard_spendable_zat,
-        "orchard_total_zat": s.orchard_total_zat,
-        "transparent_total_zat": s.transparent_total_zat,
-    })))
+    // `?sync=true` forces a chain sync first (slow); default is a fast read.
+    let sync = matches!(params.get("sync").map(String::as_str), Some("true" | "1"));
+    let s = state.wallet.summary(sync).await?;
+    Ok(Json(FaucetBalanceResponse {
+        unified_address: s.unified_address,
+        chain_tip: s.chain_tip,
+        fully_scanned: s.fully_scanned,
+        transparent_total_zat: s.transparent_total_zat,
+        orchard_spendable_zat: s.orchard_spendable_zat,
+        orchard_total_zat: s.orchard_total_zat,
+    }))
 }
 
 /// Authenticated maintenance: shield the faucet's transparent funds into

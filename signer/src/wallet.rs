@@ -9,6 +9,8 @@
 //!
 //! The implementation mirrors the official `zcash-devtool` send flow.
 
+use std::num::NonZeroU32;
+
 use rand::rngs::OsRng;
 use secrecy::{ExposeSecret, SecretVec};
 use tonic::transport::Channel;
@@ -308,6 +310,15 @@ impl Wallet {
             DustOutputPolicy::default(),
         );
 
+        // The faucet is funded by mining rewards (transparent coinbase), which
+        // the consensus rules make spendable only after 100 confirmations.
+        // Require 100 confirmations and disable zero-conf shielding so the
+        // input selector never picks immature coinbase (which the node rejects).
+        let coinbase_maturity = NonZeroU32::MIN.saturating_add(99);
+        let mature_policy =
+            ConfirmationsPolicy::new(coinbase_maturity, coinbase_maturity, false)
+                .map_err(|_| SignerError::Internal("invalid confirmations policy".to_string()))?;
+
         let txids = shield_transparent_funds(
             &mut db,
             &params,
@@ -319,7 +330,7 @@ impl Wallet {
             &SpendingKeys::from_unified_spending_key(usk),
             &from_addrs,
             account_id,
-            ConfirmationsPolicy::default(),
+            mature_policy,
         )
         .map_err(|e| SignerError::Internal(format!("shield: {e}")))?;
 
@@ -405,16 +416,20 @@ impl Wallet {
         Ok(ua.encode(params))
     }
 
-    /// Sync, then report the faucet account's address and per-pool balances.
-    /// Used by `/balance` for ops visibility and to diagnose funding issues.
-    pub async fn summary(&self) -> Result<AccountSummary, SignerError> {
+    /// Report the faucet account's address and per-pool balances. With
+    /// `sync = true` it first syncs from the chain (slow; for ops/diagnosis);
+    /// with `sync = false` it reads the wallet's current state (fast; for the
+    /// public balance display, kept current by sends/shields).
+    pub async fn summary(&self, sync: bool) -> Result<AccountSummary, SignerError> {
         let params = self.zcash_network();
         let mut db = self.open_db()?;
         let account_id = self.ensure_account_in(&mut db)?;
         let unified_address = self.unified_address(&params)?;
 
-        let mut client = self.connect().await?;
-        self.sync_wallet(&mut client, &params, &mut db).await?;
+        if sync {
+            let mut client = self.connect().await?;
+            self.sync_wallet(&mut client, &params, &mut db).await?;
+        }
 
         let summary = db
             .get_wallet_summary(ConfirmationsPolicy::default())

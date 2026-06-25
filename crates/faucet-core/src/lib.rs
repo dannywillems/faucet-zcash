@@ -221,6 +221,21 @@ pub struct SignerSendResponse {
     pub txid: String,
 }
 
+/// The faucet's on-chain reserves, split by pool, plus its receiving address
+/// and sync position. Returned by the signer `/balance` and surfaced to the
+/// frontend so users can see the faucet's funds. Amounts are in zatoshis
+/// (1 ZEC = 100_000_000 zat). Transparent funds (mining coinbase) are shielded
+/// into Orchard before they can be sent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FaucetBalanceResponse {
+    pub unified_address: String,
+    pub chain_tip: u32,
+    pub fully_scanned: u32,
+    pub transparent_total_zat: u64,
+    pub orchard_spendable_zat: u64,
+    pub orchard_total_zat: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

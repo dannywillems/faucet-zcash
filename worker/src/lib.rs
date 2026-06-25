@@ -6,7 +6,8 @@
 //! never holds the seed and never builds transactions.
 
 use faucet_core::{
-    DripResponse, Network, SignerSendRequest, SignerSendResponse, validate_destination,
+    DripResponse, FaucetBalanceResponse, Network, SignerSendRequest, SignerSendResponse,
+    validate_destination,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -28,6 +29,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .post_async("/api/auth/verify-otp", handle_verify_otp)
         .post_async("/api/auth/logout", handle_logout)
         .get_async("/api/faucet/status", handle_status)
+        .get_async("/api/faucet/balance", handle_faucet_balance)
         .post_async("/api/faucet/drip", handle_drip)
         .run(req, env)
         .await
@@ -303,13 +305,37 @@ async fn handle_drip(mut req: Request, ctx: RouteContext<()>) -> Result<Response
 // Signer call
 // ---------------------------------------------------------------------------
 
+/// Public faucet reserves (behind the Basic Auth gate, no session needed).
+/// Proxies the signer's `/balance` so the frontend can show per-pool funds.
+async fn handle_faucet_balance(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    if let Some(resp) = require_basic_auth(&req, &ctx)? {
+        return Ok(resp);
+    }
+    let base = var_str(&ctx, "SIGNER_URL", "");
+    if base.is_empty() {
+        return error_json(503, "Faucet balance is unavailable.");
+    }
+    let secret = secret(&ctx, "SIGNER_SHARED_SECRET")?;
+    let headers = Headers::new();
+    headers.set("Authorization", &format!("Bearer {secret}"))?;
+    let mut init = RequestInit::new();
+    init.with_method(Method::Get).with_headers(headers);
+    let request = Request::new_with_init(&format!("{base}/balance"), &init)?;
+    let mut resp = Fetch::Request(request).send().await?;
+    if resp.status_code() != 200 {
+        return error_json(503, "Faucet balance is unavailable.");
+    }
+    let balance: FaucetBalanceResponse = resp.json().await?;
+    Response::from_json(&balance)
+}
+
 async fn call_signer(
     ctx: &RouteContext<()>,
     address: &str,
     amount_zat: u64,
     pool: faucet_core::Pool,
 ) -> Result<String> {
-    let url = var_str(ctx, "SIGNER_URL", "");
+    let url = format!("{}/send", var_str(ctx, "SIGNER_URL", ""));
     let secret = secret(ctx, "SIGNER_SHARED_SECRET")?;
     let payload = SignerSendRequest {
         address: address.to_string(),
