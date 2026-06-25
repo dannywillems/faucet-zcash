@@ -24,3 +24,6 @@ zeroize = { workspace = true }
 # The Zcash wallet engine deps (zcash_client_backend/sqlite, zcash_primitives,
 # orchard, k256) are added to [workspace.dependencies] and referenced here as
 # the wallet module is implemented.
+
+[dev-dependencies]
+tower = { workspace = true, features = ["util"] }

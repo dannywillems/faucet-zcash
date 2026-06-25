@@ -1,0 +1,118 @@
+//! End-to-end tests for the signer HTTP service. These drive the real router
+//! (auth, address re-validation, routing, error mapping) without a live node;
+//! the transaction engine itself returns 503 until wired (see wallet.rs).
+
+use std::sync::Arc;
+
+use axum::body::{to_bytes, Body};
+use axum::http::{Request, StatusCode};
+use faucet_core::Network;
+use faucet_signer::wallet::Wallet;
+use faucet_signer::{build_app, AppState};
+use tower::util::ServiceExt;
+use zeroize::Zeroizing;
+
+const SECRET: &str = "test-shared-secret";
+// Real testnet transparent address (from the zcash_address vectors).
+const TESTNET_T: &str = "tm9iMLAuYMzJ6jtFLcA7rzUmfreGuKvr7Ma";
+
+fn app() -> axum::Router {
+    let wallet = Wallet::new(
+        Network::Testnet,
+        "http://localhost:9067".to_string(),
+        Zeroizing::new("test-seed".to_string()),
+    );
+    let state = Arc::new(AppState::new(
+        wallet,
+        Zeroizing::new(SECRET.to_string()),
+        Network::Testnet,
+    ));
+    build_app(state)
+}
+
+fn send_request(auth: Option<&str>, body: &str) -> Request<Body> {
+    let mut builder = Request::builder()
+        .method("POST")
+        .uri("/send")
+        .header("Content-Type", "application/json");
+    if let Some(token) = auth {
+        builder = builder.header("Authorization", format!("Bearer {token}"));
+    }
+    builder.body(Body::from(body.to_string())).unwrap()
+}
+
+async fn status_and_body(response: axum::response::Response) -> (StatusCode, String) {
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    (status, String::from_utf8_lossy(&bytes).to_string())
+}
+
+#[tokio::test]
+async fn health_ok() {
+    let response = app()
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn send_without_auth_is_unauthorized() {
+    let body =
+        format!(r#"{{"address":"{TESTNET_T}","amount_zat":100000000,"pool":"transparent"}}"#);
+    let response = app().oneshot(send_request(None, &body)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn send_with_wrong_secret_is_unauthorized() {
+    let body =
+        format!(r#"{{"address":"{TESTNET_T}","amount_zat":100000000,"pool":"transparent"}}"#);
+    let response = app()
+        .oneshot(send_request(Some("wrong"), &body))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn send_with_invalid_address_is_bad_request() {
+    let body = r#"{"address":"not-a-zcash-address","amount_zat":100000000,"pool":"transparent"}"#;
+    let response = app()
+        .oneshot(send_request(Some(SECRET), body))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn send_with_mainnet_address_is_bad_request() {
+    // A mainnet transparent address must be rejected on the testnet faucet.
+    let body =
+        r#"{"address":"t1Hsc1LR8yKnbbe3twRp88p6vFfC5t7DLbs","amount_zat":1,"pool":"transparent"}"#;
+    let response = app()
+        .oneshot(send_request(Some(SECRET), body))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn send_with_valid_address_reaches_engine() {
+    // Authorized + valid testnet address: passes auth and validation, then the
+    // (not-yet-wired) engine reports 503 Service Unavailable.
+    let body =
+        format!(r#"{{"address":"{TESTNET_T}","amount_zat":100000000,"pool":"transparent"}}"#);
+    let response = app()
+        .oneshot(send_request(Some(SECRET), &body))
+        .await
+        .unwrap();
+    let (status, body) = status_and_body(response).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(body.contains("not yet"), "unexpected body: {body}");
+}
