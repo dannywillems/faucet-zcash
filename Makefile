@@ -33,11 +33,25 @@ format: ## Format Rust code
 lint: ## Run clippy on native crates
 	cargo clippy --all-targets -- -D warnings
 
+.PHONY: lint-wasm
+lint-wasm: ## Run clippy on the wasm crates (wasm32 target)
+	cargo clippy -p faucet-addr-wasm -p faucet-worker \
+		--target wasm32-unknown-unknown -- -D warnings
+
 .PHONY: test
 test: ## Run native tests
 	cargo test
 
+.PHONY: deny
+deny: ## Run cargo-deny (advisories, licenses, bans, sources)
+	cargo deny check
+
 ## --- wasm crates (faucet-addr-wasm, worker) ---
+
+.PHONY: build-wasm
+build-wasm: ## Build both wasm crates (wasm32 target)
+	cargo build -p faucet-addr-wasm -p faucet-worker \
+		--target wasm32-unknown-unknown
 
 .PHONY: build-wasm-addr
 build-wasm-addr: ## Build the frontend address-validator wasm (wasm-pack)
@@ -68,9 +82,13 @@ frontend-check: ## Type-check the frontend (svelte-check)
 ## --- Shell / docs lint ---
 
 .PHONY: lint-shell
-lint-shell: ## Lint shell scripts with shellcheck
-	shellcheck .github/scripts/*.sh deploy/*.sh 2>/dev/null || \
-		shellcheck .github/scripts/*.sh
+lint-shell: ## Lint all tracked shell scripts with shellcheck
+	@scripts=$$(git ls-files '*.sh'); \
+	if [ -z "$$scripts" ]; then \
+		echo "No shell scripts to lint."; \
+	else \
+		shellcheck $$scripts; \
+	fi
 
 .PHONY: check-format-md
 check-format-md: ## Check markdown/yaml formatting
@@ -89,7 +107,7 @@ stack-down: ## Stop the local stack
 ## --- Aggregate ---
 
 .PHONY: ci
-ci: check-format lint test ## Run the core CI checks locally
+ci: check-format lint lint-wasm test build-wasm deny ## Run the core CI checks locally
 
 .PHONY: clean
 clean: ## Remove build artifacts

@@ -16,30 +16,38 @@ env:
 
 jobs:
   rust:
-    name: Rust (fmt, clippy, test, wasm)
+    name: Rust ${{ matrix.toolchain }} (fmt, clippy, test, wasm)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [stable, beta]
+    env:
+      # Override the pinned rust-toolchain.toml so the Makefile's plain `cargo`
+      # calls run under the matrix toolchain. RUSTUP_TOOLCHAIN has the highest
+      # precedence in rustup, above the toolchain file.
+      RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
     steps:
       - uses: actions/checkout@v6
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.96.0
+      - name: Install Rust (${{ matrix.toolchain }})
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ matrix.toolchain }}
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.toolchain }}
       - name: Check formatting
-        run: cargo fmt --all --check
+        run: make check-format
       - name: Clippy (native crates)
-        run: cargo clippy --all-targets -- -D warnings
+        run: make lint
       - name: Clippy (wasm crates)
-        run: >
-          cargo clippy -p faucet-addr-wasm -p faucet-worker
-          --target wasm32-unknown-unknown -- -D warnings
+        run: make lint-wasm
       - name: Test (native)
-        run: cargo test
+        run: make test
       - name: Build wasm crates
-        run: >
-          cargo build -p faucet-addr-wasm -p faucet-worker
-          --target wasm32-unknown-unknown
+        run: make build-wasm
 
   deny:
     name: cargo deny (advisories, licenses, bans)
@@ -52,4 +60,4 @@ jobs:
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked
       - name: Run cargo deny
-        run: cargo deny check
+        run: make deny
