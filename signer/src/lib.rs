@@ -40,6 +40,8 @@ pub fn build_app(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/health", get(|| async { "ok" }))
         .route("/info", get(handle_info))
+        .route("/balance", get(handle_balance))
+        .route("/shield", post(handle_shield))
         .route("/send", post(handle_send))
         .with_state(state)
 }
@@ -61,6 +63,36 @@ async fn handle_info(
         "account": format!("{account:?}"),
         "chain_height": chain_height,
     })))
+}
+
+/// Authenticated balance/diagnostics: syncs the faucet wallet and reports its
+/// receiving address and per-pool balances. Useful for ops (faucet reserves)
+/// and for diagnosing funding (compare `unified_address` to what was funded).
+async fn handle_balance(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, SignerError> {
+    authorize(&headers, &state.shared_secret)?;
+    let s = state.wallet.summary().await?;
+    Ok(Json(serde_json::json!({
+        "unified_address": s.unified_address,
+        "chain_tip": s.chain_tip,
+        "fully_scanned": s.fully_scanned,
+        "orchard_spendable_zat": s.orchard_spendable_zat,
+        "orchard_total_zat": s.orchard_total_zat,
+        "transparent_total_zat": s.transparent_total_zat,
+    })))
+}
+
+/// Authenticated maintenance: shield the faucet's transparent funds into
+/// Orchard so they become spendable by `/send`. Returns the shielding txid.
+async fn handle_shield(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, SignerError> {
+    authorize(&headers, &state.shared_secret)?;
+    let txid = state.wallet.shield().await?;
+    Ok(Json(serde_json::json!({ "txid": txid })))
 }
 
 async fn handle_send(

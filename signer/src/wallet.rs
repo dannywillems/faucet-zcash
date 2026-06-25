@@ -13,13 +13,16 @@ use rand::rngs::OsRng;
 use secrecy::{ExposeSecret, SecretVec};
 use tonic::transport::Channel;
 use zcash_client_backend::data_api::chain::ChainState;
-use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError;
+use zcash_client_backend::data_api::wallet::input_selection::{
+    GreedyInputSelector, GreedyInputSelectorError,
+};
 use zcash_client_backend::data_api::wallet::{
     ConfirmationsPolicy, SpendingKeys, create_proposed_transactions,
-    propose_standard_transfer_to_address,
+    propose_standard_transfer_to_address, shield_transparent_funds,
 };
 use zcash_client_backend::data_api::{AccountBirthday, WalletRead, WalletWrite};
-use zcash_client_backend::fees::StandardFeeRule;
+use zcash_client_backend::fees::standard::SingleOutputChangeStrategy;
+use zcash_client_backend::fees::{DustOutputPolicy, StandardFeeRule};
 use zcash_client_backend::proto::service::{
     self, Empty, compact_tx_streamer_client::CompactTxStreamerClient,
 };
@@ -28,8 +31,9 @@ use zcash_client_sqlite::util::SystemClock;
 use zcash_client_sqlite::wallet::commitment_tree;
 use zcash_client_sqlite::{AccountUuid, WalletDb};
 use zcash_keys::address::Address;
-use zcash_keys::keys::UnifiedSpendingKey;
+use zcash_keys::keys::{UnifiedAddressRequest, UnifiedSpendingKey};
 use zcash_primitives::block::BlockHash;
+use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::ShieldedProtocol;
 use zcash_protocol::consensus::{BlockHeight, Network as ZNetwork, NetworkUpgrade, Parameters};
@@ -42,6 +46,20 @@ use crate::error::SignerError;
 
 /// Wallet DB concrete type (file or `:memory:` SQLite, system clock, OS RNG).
 type Db = WalletDb<rusqlite::Connection, ZNetwork, SystemClock, OsRng>;
+
+/// Synced view of the faucet account: its receiving address and per-pool
+/// balances. Used by `/balance` for ops visibility and to diagnose funding.
+pub struct AccountSummary {
+    /// The faucet's unified receiving address (Orchard + transparent).
+    pub unified_address: String,
+    /// Chain tip height as seen by the wallet after sync.
+    pub chain_tip: u32,
+    /// Height through which the wallet is fully scanned.
+    pub fully_scanned: u32,
+    pub orchard_spendable_zat: u64,
+    pub orchard_total_zat: u64,
+    pub transparent_total_zat: u64,
+}
 
 pub struct Wallet {
     network: Network,
@@ -191,30 +209,9 @@ impl Wallet {
         let mut db = self.open_db()?;
         let account_id = self.ensure_account_in(&mut db)?;
 
-        // Sync the wallet from zaino into an in-memory compact-block cache.
+        // Sync the wallet from the lightwalletd server.
         let mut client = self.connect().await?;
-        let db_cache = crate::blockcache::MemBlockCache::new();
-        // Small batches keep the per-request load on zaino/zebra low. `sync::run`
-        // resumes from the wallet's stored progress, so on a transient
-        // rate-limit (zebra 429) we back off and retry, making incremental
-        // headway rather than failing the whole drip.
-        let mut attempts = 0u32;
-        loop {
-            match zcash_client_backend::sync::run(&mut client, &params, &db_cache, &mut db, 1_000)
-                .await
-            {
-                Ok(()) => break,
-                Err(e) => {
-                    let msg = format!("{e}");
-                    attempts += 1;
-                    if attempts > 60 || !msg.contains("429") {
-                        return Err(SignerError::Internal(format!("sync: {msg}")));
-                    }
-                    tracing::warn!(attempts, "sync rate-limited (429); backing off");
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                }
-            }
-        }
+        self.sync_wallet(&mut client, &params, &mut db).await?;
 
         // Build and prove the transfer.
         let prover = LocalTxProver::with_default_location().ok_or_else(|| {
@@ -266,10 +263,84 @@ impl Wallet {
         .map_err(|e| SignerError::Internal(format!("create transaction: {e}")))?;
 
         // Broadcast.
+        self.broadcast(&mut client, &mut db, txids).await
+    }
+
+    /// Shield the faucet's transparent funds into Orchard. The funded faucet
+    /// holds transparent UTXOs, but `propose_standard_transfer_to_address`
+    /// spends shielded notes, so transparent funds must be shielded before they
+    /// can be dripped. Syncs, shields all transparent receivers, broadcasts, and
+    /// returns the shielding txid.
+    pub async fn shield(&self) -> Result<String, SignerError> {
+        let params = self.zcash_network();
+        let mut db = self.open_db()?;
+        let account_id = self.ensure_account_in(&mut db)?;
+
+        let mut client = self.connect().await?;
+        self.sync_wallet(&mut client, &params, &mut db).await?;
+
+        let from_addrs: Vec<_> = db
+            .get_transparent_receivers(account_id, true, true)
+            .map_err(|e| SignerError::Internal(format!("transparent receivers: {e}")))?
+            .into_keys()
+            .collect();
+        if from_addrs.is_empty() {
+            return Err(SignerError::Internal(
+                "no transparent receivers to shield".to_string(),
+            ));
+        }
+
+        let prover = LocalTxProver::with_default_location().ok_or_else(|| {
+            SignerError::Internal(
+                "Sapling params not found in ~/.zcash-params (run fetch-params)".to_string(),
+            )
+        })?;
+        let seed = self.seed_secret()?;
+        let usk =
+            UnifiedSpendingKey::from_seed(&params, seed.expose_secret(), zip32::AccountId::ZERO)
+                .map_err(|e| SignerError::Internal(format!("derive spending key: {e}")))?;
+
+        let input_selector = GreedyInputSelector::new();
+        let change_strategy = SingleOutputChangeStrategy::new(
+            StandardFeeRule::Zip317,
+            None,
+            ShieldedProtocol::Orchard,
+            DustOutputPolicy::default(),
+        );
+
+        let txids = shield_transparent_funds(
+            &mut db,
+            &params,
+            &prover,
+            &prover,
+            &input_selector,
+            &change_strategy,
+            Zatoshis::const_from_u64(10_000),
+            &SpendingKeys::from_unified_spending_key(usk),
+            &from_addrs,
+            account_id,
+            ConfirmationsPolicy::default(),
+        )
+        .map_err(|e| SignerError::Internal(format!("shield: {e}")))?;
+
+        self.broadcast(&mut client, &mut db, txids).await
+    }
+
+    /// Broadcast already-built transactions (by id) to the lightwalletd server,
+    /// returning the last txid. Shared by `send` and `shield`.
+    async fn broadcast<I>(
+        &self,
+        client: &mut CompactTxStreamerClient<Channel>,
+        db: &mut Db,
+        txids: I,
+    ) -> Result<String, SignerError>
+    where
+        I: IntoIterator<Item = TxId>,
+    {
         let mut result_txid = None;
-        for txid in txids.iter() {
+        for txid in txids {
             let tx = db
-                .get_transaction(*txid)
+                .get_transaction(txid)
                 .map_err(|e| SignerError::Internal(format!("load transaction: {e}")))?
                 .ok_or_else(|| SignerError::Internal("transaction missing after build".into()))?;
             let mut raw = service::RawTransaction::default();
@@ -291,5 +362,88 @@ impl Wallet {
         result_txid
             .map(|t| t.to_string())
             .ok_or_else(|| SignerError::Internal("no transaction produced".to_string()))
+    }
+
+    /// Sync the wallet from the configured lightwalletd into an in-memory
+    /// compact-block cache. Small batches keep per-request load low; `sync::run`
+    /// resumes from stored progress, so on a transient rate-limit (429) we back
+    /// off and retry, making incremental headway rather than failing outright.
+    async fn sync_wallet(
+        &self,
+        client: &mut CompactTxStreamerClient<Channel>,
+        params: &ZNetwork,
+        db: &mut Db,
+    ) -> Result<(), SignerError> {
+        let db_cache = crate::blockcache::MemBlockCache::new();
+        let mut attempts = 0u32;
+        loop {
+            match zcash_client_backend::sync::run(client, params, &db_cache, db, 1_000).await {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    let msg = format!("{e}");
+                    attempts += 1;
+                    if attempts > 60 || !msg.contains("429") {
+                        return Err(SignerError::Internal(format!("sync: {msg}")));
+                    }
+                    tracing::warn!(attempts, "sync rate-limited (429); backing off");
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+            }
+        }
+    }
+
+    /// Derive the faucet's unified receiving address (offline, no sync).
+    fn unified_address(&self, params: &ZNetwork) -> Result<String, SignerError> {
+        let seed = self.seed_secret()?;
+        let usk =
+            UnifiedSpendingKey::from_seed(params, seed.expose_secret(), zip32::AccountId::ZERO)
+                .map_err(|e| SignerError::Internal(format!("derive spending key: {e}")))?;
+        let (ua, _) = usk
+            .to_unified_full_viewing_key()
+            .default_address(UnifiedAddressRequest::ALLOW_ALL)
+            .map_err(|e| SignerError::Internal(format!("derive address: {e}")))?;
+        Ok(ua.encode(params))
+    }
+
+    /// Sync, then report the faucet account's address and per-pool balances.
+    /// Used by `/balance` for ops visibility and to diagnose funding issues.
+    pub async fn summary(&self) -> Result<AccountSummary, SignerError> {
+        let params = self.zcash_network();
+        let mut db = self.open_db()?;
+        let account_id = self.ensure_account_in(&mut db)?;
+        let unified_address = self.unified_address(&params)?;
+
+        let mut client = self.connect().await?;
+        self.sync_wallet(&mut client, &params, &mut db).await?;
+
+        let summary = db
+            .get_wallet_summary(ConfirmationsPolicy::default())
+            .map_err(|e| SignerError::Internal(format!("wallet summary: {e}")))?;
+        let (chain_tip, fully_scanned) = match &summary {
+            Some(s) => (
+                u32::from(s.chain_tip_height()),
+                u32::from(s.fully_scanned_height()),
+            ),
+            None => (0, 0),
+        };
+        let (orchard_spendable_zat, orchard_total_zat, transparent_total_zat) = match summary
+            .as_ref()
+            .and_then(|s| s.account_balances().get(&account_id))
+        {
+            Some(b) => (
+                u64::from(b.orchard_balance().spendable_value()),
+                u64::from(b.orchard_balance().total()),
+                u64::from(b.unshielded_balance().total()),
+            ),
+            None => (0, 0, 0),
+        };
+        Ok(AccountSummary {
+            unified_address,
+            chain_tip,
+            fully_scanned,
+            orchard_spendable_zat,
+            orchard_total_zat,
+            transparent_total_zat,
+        })
     }
 }
