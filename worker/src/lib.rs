@@ -30,6 +30,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .post_async("/api/auth/logout", handle_logout)
         .get_async("/api/faucet/status", handle_status)
         .get_async("/api/faucet/balance", handle_faucet_balance)
+        .post_async("/api/internal/balance", handle_ingest_balance)
         .post_async("/api/faucet/drip", handle_drip)
         .run(req, env)
         .await
@@ -76,6 +77,17 @@ struct SessionRow {
 #[derive(Deserialize)]
 struct LastDripRow {
     created_at: i64,
+}
+
+#[derive(Deserialize)]
+struct BalanceRow {
+    unified_address: String,
+    transparent_total_zat: i64,
+    orchard_spendable_zat: i64,
+    orchard_total_zat: i64,
+    chain_tip: i64,
+    fully_scanned: i64,
+    updated_at: i64,
 }
 
 // ---------------------------------------------------------------------------
@@ -306,27 +318,69 @@ async fn handle_drip(mut req: Request, ctx: RouteContext<()>) -> Result<Response
 // ---------------------------------------------------------------------------
 
 /// Public faucet reserves (behind the Basic Auth gate, no session needed).
-/// Proxies the signer's `/balance` so the frontend can show per-pool funds.
+/// Served from the cached D1 snapshot pushed by the signer host, so it works
+/// without an inbound tunnel to the signer.
 async fn handle_faucet_balance(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     if let Some(resp) = require_basic_auth(&req, &ctx)? {
         return Ok(resp);
     }
-    let base = var_str(&ctx, "SIGNER_URL", "");
-    if base.is_empty() {
-        return error_json(503, "Faucet balance is unavailable.");
+    let db = ctx.env.d1("DB")?;
+    let row: Option<BalanceRow> = db
+        .prepare(
+            "SELECT unified_address, transparent_total_zat, orchard_spendable_zat, \
+             orchard_total_zat, chain_tip, fully_scanned, updated_at \
+             FROM faucet_balance WHERE id = 1",
+        )
+        .first(None)
+        .await?;
+    match row {
+        Some(r) => Response::from_json(&serde_json::json!({
+            "unified_address": r.unified_address,
+            "chain_tip": r.chain_tip,
+            "fully_scanned": r.fully_scanned,
+            "transparent_total_zat": r.transparent_total_zat,
+            "orchard_spendable_zat": r.orchard_spendable_zat,
+            "orchard_total_zat": r.orchard_total_zat,
+            "updated_at": r.updated_at,
+        })),
+        None => error_json(503, "Faucet balance is not available yet."),
     }
-    let secret = secret(&ctx, "SIGNER_SHARED_SECRET")?;
-    let headers = Headers::new();
-    headers.set("Authorization", &format!("Bearer {secret}"))?;
-    let mut init = RequestInit::new();
-    init.with_method(Method::Get).with_headers(headers);
-    let request = Request::new_with_init(&format!("{base}/balance"), &init)?;
-    let mut resp = Fetch::Request(request).send().await?;
-    if resp.status_code() != 200 {
-        return error_json(503, "Faucet balance is unavailable.");
+}
+
+/// Internal: the signer host pushes a balance snapshot here (authenticated with
+/// the signer shared secret, not a session). Call the Worker origin directly,
+/// not the Pages proxy, so the Basic Auth gate does not apply.
+async fn handle_ingest_balance(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let expected = format!("Bearer {}", secret(&ctx, "SIGNER_SHARED_SECRET")?);
+    let provided = req.headers().get("Authorization")?.unwrap_or_default();
+    if !ct_eq(provided.as_bytes(), expected.as_bytes()) {
+        return error_json(401, "Unauthorized.");
     }
-    let balance: FaucetBalanceResponse = resp.json().await?;
-    Response::from_json(&balance)
+    let b: FaucetBalanceResponse = match req.json().await {
+        Ok(b) => b,
+        Err(_) => return error_json(400, "Invalid request body."),
+    };
+    let db = ctx.env.d1("DB")?;
+    db.prepare(
+        "INSERT INTO faucet_balance (id, unified_address, transparent_total_zat, \
+         orchard_spendable_zat, orchard_total_zat, chain_tip, fully_scanned, updated_at) \
+         VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+         ON CONFLICT(id) DO UPDATE SET unified_address = ?1, transparent_total_zat = ?2, \
+         orchard_spendable_zat = ?3, orchard_total_zat = ?4, chain_tip = ?5, \
+         fully_scanned = ?6, updated_at = ?7",
+    )
+    .bind(&[
+        js(&b.unified_address),
+        jsi(b.transparent_total_zat as i64),
+        jsi(b.orchard_spendable_zat as i64),
+        jsi(b.orchard_total_zat as i64),
+        jsi(i64::from(b.chain_tip)),
+        jsi(i64::from(b.fully_scanned)),
+        jsi(now_secs()),
+    ])?
+    .run()
+    .await?;
+    Response::from_json(&serde_json::json!({ "message": "ok" }))
 }
 
 async fn call_signer(

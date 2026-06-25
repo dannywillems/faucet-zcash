@@ -145,11 +145,11 @@
     </p>
   </div>
 
-  {#if balance}
-    <div
-      class="rounded-lg border border-zinc-200 bg-white p-4 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-    >
-      <div class="mb-3 font-medium">Faucet reserves</div>
+  <div
+    class="rounded-lg border border-zinc-200 bg-white p-4 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+  >
+    <div class="mb-3 font-medium">Faucet reserves</div>
+    {#if balance}
       <dl class="grid grid-cols-2 gap-4">
         <div>
           <dt class="text-zinc-500 dark:text-zinc-400">Shielded (Orchard)</dt>
@@ -169,8 +169,12 @@
           </dd>
         </div>
       </dl>
-    </div>
-  {/if}
+    {:else}
+      <p class="text-zinc-500 dark:text-zinc-400">
+        Reserves are currently unavailable.
+      </p>
+    {/if}
+  </div>
 
   {#if error}
     <div
