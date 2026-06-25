@@ -64,8 +64,7 @@
   let drip = $state<DripResult | null>(null);
 
   const explorerBase =
-    import.meta.env.VITE_EXPLORER_BASE ??
-    'https://testnet.cipherscan.app/tx/';
+    import.meta.env.VITE_EXPLORER_BASE ?? 'https://testnet.cipherscan.app/tx/';
 
   const addressValid = $derived(check?.valid === true);
 
