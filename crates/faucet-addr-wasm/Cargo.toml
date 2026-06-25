@@ -16,5 +16,5 @@ crate-type = ["cdylib", "rlib"]
 all = "warn"
 
 [dependencies]
-faucet-core = { path = "../faucet-core" }
-wasm-bindgen = "0.2.126"
+faucet-core = { workspace = true }
+wasm-bindgen = { workspace = true }

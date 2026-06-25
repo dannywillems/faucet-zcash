@@ -13,6 +13,7 @@ rust-version.workspace = true
 all = "warn"
 
 [dependencies]
-faucet-core = { path = "../crates/faucet-core" }
-# axum, tokio, zcash_client_backend/sqlite, orchard, zcash_primitives, k256,
-# zeroize are added after dependency approval is recorded in dependencies.md.
+faucet-core = { workspace = true }
+# Signer-specific deps (axum, tokio, zcash_client_backend/sqlite, orchard,
+# zcash_primitives, k256, zeroize) are added to [workspace.dependencies] and
+# referenced here when the signer is implemented.
