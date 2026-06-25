@@ -18,6 +18,15 @@ export interface FaucetStatus {
   next_eligible_at: number;
 }
 
+export interface FaucetBalance {
+  unified_address: string;
+  chain_tip: number;
+  fully_scanned: number;
+  transparent_total_zat: number;
+  orchard_spendable_zat: number;
+  orchard_total_zat: number;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -104,6 +113,9 @@ export const api = {
   },
   status(): Promise<FaucetStatus> {
     return request('/faucet/status', 'GET');
+  },
+  balance(): Promise<FaucetBalance> {
+    return request('/faucet/balance', 'GET');
   },
   drip(address: string): Promise<DripResult> {
     return request('/faucet/drip', 'POST', { address });

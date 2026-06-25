@@ -1,7 +1,17 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { api, ApiError, type DripResult } from '$lib/api';
+  import { api, ApiError, type DripResult, type FaucetBalance } from '$lib/api';
   import { validateAddress, type AddressCheck } from '$lib/wasm-validator';
+
+  // Faucet reserves, fetched on load (public; behind the access gate).
+  let balance = $state<FaucetBalance | null>(null);
+
+  // Format zatoshis as TAZ (testnet ZEC); 1 TAZ = 100_000_000 zat.
+  function taz(zat: number): string {
+    return (zat / 100_000_000).toLocaleString(undefined, {
+      maximumFractionDigits: 8,
+    });
+  }
 
   type Step = 'email' | 'otp' | 'faucet';
 
@@ -28,6 +38,13 @@
       // Not signed in (401) or unreachable; stay on the email step.
     } finally {
       checking = false;
+    }
+    // Show the faucet's reserves (best effort; unavailable if the signer is
+    // unreachable, e.g. before the tunnel is configured).
+    try {
+      balance = await api.balance();
+    } catch {
+      balance = null;
     }
   });
 
@@ -127,6 +144,33 @@
       with an Orchard receiver), and receive 1 TAZ.
     </p>
   </div>
+
+  {#if balance}
+    <div
+      class="rounded-lg border border-zinc-200 bg-white p-4 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+    >
+      <div class="mb-3 font-medium">Faucet reserves</div>
+      <dl class="grid grid-cols-2 gap-4">
+        <div>
+          <dt class="text-zinc-500 dark:text-zinc-400">Shielded (Orchard)</dt>
+          <dd class="font-mono">
+            {taz(balance.orchard_spendable_zat)} TAZ
+            <span class="text-zinc-500 dark:text-zinc-400">spendable</span>
+          </dd>
+          <dd class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+            {taz(balance.orchard_total_zat)} TAZ total
+          </dd>
+        </div>
+        <div>
+          <dt class="text-zinc-500 dark:text-zinc-400">Transparent</dt>
+          <dd class="font-mono">{taz(balance.transparent_total_zat)} TAZ</dd>
+          <dd class="text-xs text-zinc-500 dark:text-zinc-400">
+            shielded automatically before sending
+          </dd>
+        </div>
+      </dl>
+    </div>
+  {/if}
 
   {#if error}
     <div
@@ -282,4 +326,69 @@
       {/if}
     {/if}
   </div>
+
+  <details
+    class="rounded-lg border border-zinc-200 bg-white p-4 text-sm text-zinc-600 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+  >
+    <summary
+      class="cursor-pointer font-medium text-zinc-900 dark:text-zinc-100"
+    >
+      How it works
+    </summary>
+    <div class="mt-3 space-y-3">
+      <p>
+        This faucet runs the official Rust Zcash stack (librustzcash, Orchard
+        0.14). It is non-custodial to you: you only enter a destination address.
+        The steps:
+      </p>
+      <ol class="list-decimal space-y-2 pl-5">
+        <li>
+          <span class="font-medium">Access gate.</span> The whole site is behind HTTP
+          Basic Auth to keep bots out.
+        </li>
+        <li>
+          <span class="font-medium">Email verification.</span> You request a one-time
+          code, sent by email (Resend); verifying it opens a session.
+        </li>
+        <li>
+          <span class="font-medium">Address validation.</span> Your address is
+          checked in your browser by Rust compiled to WebAssembly (the same
+          <code>zcash_address</code> logic the backend uses), then re-validated server-side.
+          Transparent and Orchard unified addresses are accepted; Sapling is not supported.
+        </li>
+        <li>
+          <span class="font-medium">Building the transaction.</span> A backend
+          signer holds the faucet seed and uses
+          <code>zcash_client_sqlite</code> to track the faucet's notes and nullifiers.
+          It selects inputs, then builds, proves (Orchard via halo2; transparent via
+          secp256k1) and signs the transaction. The browser and the edge Worker never
+          see the seed.
+        </li>
+        <li>
+          <span class="font-medium">Automatic shielding.</span> The faucet is funded
+          by mining rewards, which arrive as transparent coinbase. Those cannot be
+          sent directly, so the signer automatically shields them into the Orchard
+          pool (after the 100-block coinbase maturity) before dripping. That is why
+          the reserves above show a transparent balance that becomes spendable shielded
+          funds.
+        </li>
+        <li>
+          <span class="font-medium">Broadcast.</span> The signed transaction is broadcast
+          to a Zcash testnet node over the lightwalletd protocol, and the resulting
+          txid is shown to you with an explorer link.
+        </li>
+      </ol>
+      <p>
+        Source:
+        <a
+          href="https://github.com/dannywillems/faucet-zcash"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-amber-700 hover:underline dark:text-amber-400"
+        >
+          github.com/dannywillems/faucet-zcash
+        </a>.
+      </p>
+    </div>
+  </details>
 </section>
