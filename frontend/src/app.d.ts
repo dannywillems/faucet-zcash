@@ -6,6 +6,12 @@ declare global {
     // interface PageData {}
     // interface Platform {}
   }
+
+  // Build-time constants injected by Vite `define` (see vite.config.ts).
+  const __APP_VERSION__: string;
+  const __APP_COMMIT__: string;
+  const __APP_COMMIT_FULL__: string;
+  const __REPO_URL__: string;
 }
 
 export {};
