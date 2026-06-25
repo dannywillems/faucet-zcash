@@ -13,7 +13,14 @@ rust-version.workspace = true
 all = "warn"
 
 [dependencies]
+axum = { workspace = true }
 faucet-core = { workspace = true }
-# Signer-specific deps (axum, tokio, zcash_client_backend/sqlite, orchard,
-# zcash_primitives, k256, zeroize) are added to [workspace.dependencies] and
-# referenced here when the signer is implemented.
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+zeroize = { workspace = true }
+# The Zcash wallet engine deps (zcash_client_backend/sqlite, zcash_primitives,
+# orchard, k256) are added to [workspace.dependencies] and referenced here as
+# the wallet module is implemented.

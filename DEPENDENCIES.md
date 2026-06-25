@@ -17,14 +17,17 @@ CI to catch advisories and license drift.
 | `getrandom` | 0.3 (feature `wasm_js`) | worker | CSPRNG for OTP codes and session tokens. |
 | `sha2`, `hex` | 0.11 / 0.4 | worker | Hash OTP codes and session tokens at rest. |
 | `serde_json` | 1.0 | worker | JSON request/response bodies. |
-| `zcash_client_backend` | pending | signer | Wallet engine: note scanning, proposals, proving. |
+| `axum` | 0.8.9 | signer | HTTP service. |
+| `tokio` | 1.52 (rt-multi-thread, macros, net) | signer | Async runtime. |
+| `tracing`, `tracing-subscriber` | 0.1 / 0.3 | signer | Structured logging. |
+| `thiserror` | 2.0 | signer | Error types. |
+| `zeroize` | 1.9 | signer | Scrub the faucet seed + auth secret in memory. |
+| `zcash_client_backend` | pending (0.23 planned) | signer | Wallet engine: note scanning, proposals, proving. |
 | `zcash_client_sqlite` | pending | signer | Wallet data store (notes, witnesses, tree). |
 | `zcash_primitives` | pending | signer | Transparent tx building, primitives. |
 | `orchard` | pending | signer | Orchard (halo2) note/proof construction. |
-| `incrementalmerkletree`, `shardtree` | pending | signer | Note commitment tree + witnesses. |
-| `k256` | pending | signer | secp256k1 signing (wasm-friendly, pure Rust). |
-| `zeroize` | pending | signer | Scrub the faucet seed in memory. |
-| `axum`, `tokio` | pending | signer | HTTP service + async runtime (already approved upstream). |
+| `incrementalmerkletree`, `shardtree` | pending | signer | Note commitment tree + witnesses (via client_backend). |
+| `k256` | pending | signer | secp256k1 signing (transparent inputs). |
 
 ## Notes
 
