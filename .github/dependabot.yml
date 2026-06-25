@@ -9,6 +9,14 @@ updates:
     open-pull-requests-limit: 10
     commit-message:
       prefix: "deps"
+    ignore:
+      # The librustzcash stack pins these (the wallet API takes rand 0.8's
+      # OsRng and secrecy 0.8's SecretVec), so their majors cannot be bumped
+      # independently. Revisit when librustzcash updates them upstream.
+      - dependency-name: "rand"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "secrecy"
+        update-types: ["version-update:semver-major"]
     groups:
       cargo-minor-patch:
         update-types:
