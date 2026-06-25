@@ -4,3 +4,8 @@
 # getrandom (faucet-core, faucet-addr-wasm) are unaffected by the flag.
 [target.wasm32-unknown-unknown]
 rustflags = ['--cfg', 'getrandom_backend="wasm_js"']
+
+# Use the git CLI (with the machine's auth) to fetch git dependencies, e.g. the
+# librustzcash pin. Avoids cargo's libgit2 auth limitations.
+[net]
+git-fetch-with-cli = true

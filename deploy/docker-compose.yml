@@ -2,9 +2,10 @@
 # reaches it only through the Cloudflare Tunnel (cloudflared), which connects
 # out to Cloudflare. Copy .env.example to .env and fill the secrets first.
 #
-# By the current decision the signer uses a public testnet lightwalletd
-# (LIGHTWALLETD_URL). To self-host instead, run zcashd + lightwalletd (see
-# README.md) and point LIGHTWALLETD_URL at the local lightwalletd.
+# The signer syncs and broadcasts through a local zaino (lightwalletd-protocol
+# gRPC) backed by zebrad. Run zebra + zaino on the host and point
+# LIGHTWALLETD_URL at zaino (reachable from this container via
+# host.docker.internal). See README.md.
 
 services:
   signer:
@@ -17,9 +18,14 @@ services:
       SIGNER_BIND: 0.0.0.0:8080
       SIGNER_SHARED_SECRET: ${SIGNER_SHARED_SECRET:?set SIGNER_SHARED_SECRET in .env}
       SIGNER_SEED: ${SIGNER_SEED:?set SIGNER_SEED in .env}
-      LIGHTWALLETD_URL: ${LIGHTWALLETD_URL:-https://testnet.zec.rocks:443}
+      LIGHTWALLETD_URL: ${LIGHTWALLETD_URL:-http://host.docker.internal:8137}
+      SIGNER_DB_PATH: ${SIGNER_DB_PATH:-/data/faucet-wallet.db}
       FAUCET_NETWORK: testnet
       RUST_LOG: info
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - faucet-data:/data
     expose:
       - "8080"
     networks:
@@ -35,6 +41,9 @@ services:
       - signer
     networks:
       - faucet
+
+volumes:
+  faucet-data:
 
 networks:
   faucet:

@@ -15,12 +15,16 @@ use zeroize::Zeroizing;
 const SECRET: &str = "test-shared-secret";
 // Real testnet transparent address (from the zcash_address vectors).
 const TESTNET_T: &str = "tm9iMLAuYMzJ6jtFLcA7rzUmfreGuKvr7Ma";
+// A valid 32-byte (64 hex char) test seed.
+const SEED_HEX: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 fn app() -> axum::Router {
+    // In-memory wallet DB so each request gets a fresh, side-effect-free engine.
     let wallet = Wallet::new(
         Network::Testnet,
-        "http://localhost:9067".to_string(),
-        Zeroizing::new("test-seed".to_string()),
+        "http://127.0.0.1:8137".to_string(),
+        ":memory:".to_string(),
+        Zeroizing::new(SEED_HEX.to_string()),
     );
     let state = Arc::new(AppState::new(
         wallet,
@@ -100,6 +104,26 @@ async fn send_with_mainnet_address_is_bad_request() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[test]
+fn ensure_account_creates_and_persists() {
+    // Use a temp file DB so the account persists across two opens (idempotent).
+    let dir = std::env::temp_dir();
+    let path = dir.join(format!("faucet-signer-test-{}.sqlite", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let wallet = Wallet::new(
+        Network::Testnet,
+        "http://127.0.0.1:8137".to_string(),
+        path.to_string_lossy().to_string(),
+        Zeroizing::new(SEED_HEX.to_string()),
+    );
+
+    let first = wallet.ensure_account().expect("create account");
+    let second = wallet.ensure_account().expect("reopen account");
+    assert_eq!(first, second, "the faucet account should persist");
+
+    let _ = std::fs::remove_file(&path);
 }
 
 #[tokio::test]

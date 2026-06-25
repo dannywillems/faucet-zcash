@@ -53,23 +53,30 @@ make deploy-pages
 GitHub Actions needs repo secrets `CLOUDFLARE_API_TOKEN` and
 `CLOUDFLARE_ACCOUNT_ID`.
 
-## 4. Signer (your host)
+## 4. Node: zebra + zaino (your host)
+
+The signer syncs and broadcasts through a local **zaino** (which serves the
+lightwalletd gRPC protocol), backed by **zebrad** on testnet. Run both on the
+host (zebrad fully synced to testnet, zaino pointed at zebrad's RPC), then set
+`LIGHTWALLETD_URL` to zaino's gRPC address.
+
+## 5. Signer (your host)
 
 ```bash
 cd deploy
-cp .env.example .env   # fill SIGNER_SHARED_SECRET, SIGNER_SEED, tunnel token
+cp .env.example .env   # fill SIGNER_SHARED_SECRET, SIGNER_SEED, LIGHTWALLETD_URL, tunnel token
 docker compose up -d
 ```
 
 The `cloudflared` service connects out to Cloudflare; configure the tunnel in
 the Zero Trust dashboard to route your signer hostname to `http://signer:8080`.
-The signer is never published on a host port.
+The signer is never published on a host port. The containerized signer reaches
+zaino on the host via `host.docker.internal`; the wallet DB persists on the
+`faucet-data` volume.
 
-By default the signer uses a public testnet lightwalletd
-(`LIGHTWALLETD_URL`). To self-host, run a testnet `zcashd` plus `lightwalletd`
-alongside (lightwalletd serves compact blocks from zcashd), and point
-`LIGHTWALLETD_URL` at the local lightwalletd.
-
-> Note: the signer's transaction engine is not yet wired (see
-> `signer/src/wallet.rs`); `/send` returns 503 until it is. Everything else
-> (auth, OTP, cooldown, UI) is functional.
+> Status: the signer opens its wallet DB, runs migrations, and derives the
+> faucet account from the seed on first run (verified by the integration
+> tests). The live sync + proposal + Orchard/transparent proving + broadcast
+> against zebra + zaino is the remaining step (`signer/src/wallet.rs`); until
+> it is enabled `/send` returns 503. Everything else (auth, OTP, cooldown, UI)
+> is functional.

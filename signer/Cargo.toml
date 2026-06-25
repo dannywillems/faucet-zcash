@@ -15,15 +15,22 @@ all = "warn"
 [dependencies]
 axum = { workspace = true }
 faucet-core = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
+secrecy = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+zcash_client_backend = { workspace = true }
+zcash_client_sqlite = { workspace = true }
+zcash_primitives = { workspace = true }
 zeroize = { workspace = true }
-# The Zcash wallet engine deps (zcash_client_backend/sqlite, zcash_primitives,
-# orchard, k256) are added to [workspace.dependencies] and referenced here as
-# the wallet module is implemented.
+# Direct git dep (not via the workspace table, which holds the crates.io 0.9
+# used by faucet-core/worker for wasm): the wallet engine needs the same
+# librustzcash-main Network type as WalletDb.
+zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23" }
 
 [dev-dependencies]
 tower = { workspace = true, features = ["util"] }

@@ -4,6 +4,16 @@
 [advisories]
 # Fail on any known security advisory in the dependency tree.
 yanked = "deny"
+ignore = [
+    # RUSTSEC-2026-0009: stack-exhaustion DoS in `time`'s RFC 2822 parser
+    # (fixed in time 0.3.47). It is pulled transitively by the git-pinned
+    # librustzcash stack, which hard-pins time-core "=0.1.2" and so cannot move
+    # `time` to 0.3.47 here. The faucet never parses attacker-controlled RFC
+    # 2822 input (time is used only for generated unix timestamps), so the
+    # vulnerable path is unreachable. Revisit when librustzcash updates its
+    # time-core pin.
+    "RUSTSEC-2026-0009",
+]
 
 [licenses]
 # Licenses permitted in the dependency tree. The Zcash stack is MIT/Apache-2.0;
@@ -34,4 +44,7 @@ allow-wildcard-paths = true
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-git = []
+# The latest crates.io librustzcash pair does not compile together, so the
+# signer pins librustzcash to a git revision (its main is the consistent
+# latest).
+allow-git = ["https://github.com/zcash/librustzcash"]

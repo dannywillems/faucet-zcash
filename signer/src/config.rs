@@ -11,11 +11,14 @@ pub struct Config {
     pub bind: String,
     /// Bearer token the Worker must present on `/send`.
     pub shared_secret: Zeroizing<String>,
-    /// lightwalletd gRPC endpoint used to sync the faucet wallet and broadcast.
+    /// lightwalletd-protocol gRPC endpoint used to sync the faucet wallet and
+    /// broadcast. Defaults to a local zaino (backed by zebrad).
     pub lightwalletd_url: String,
+    /// Path to the wallet SQLite database (created on first run).
+    pub db_path: String,
     /// Network the faucet operates on (testnet).
     pub network: Network,
-    /// The faucet seed (mnemonic or hex), held only in scrubbed memory.
+    /// The faucet seed (hex), held only in scrubbed memory.
     pub seed: Zeroizing<String>,
 }
 
@@ -28,7 +31,9 @@ impl Config {
         let bind = std::env::var("SIGNER_BIND").unwrap_or_else(|_| "127.0.0.1:8080".to_string());
         let shared_secret = Zeroizing::new(required("SIGNER_SHARED_SECRET")?);
         let lightwalletd_url = std::env::var("LIGHTWALLETD_URL")
-            .unwrap_or_else(|_| "https://testnet.zec.rocks:443".to_string());
+            .unwrap_or_else(|_| "http://127.0.0.1:8137".to_string());
+        let db_path =
+            std::env::var("SIGNER_DB_PATH").unwrap_or_else(|_| "faucet-wallet.db".to_string());
         let network = match std::env::var("FAUCET_NETWORK").as_deref() {
             Ok("mainnet") => Network::Mainnet,
             _ => Network::Testnet,
@@ -38,6 +43,7 @@ impl Config {
             bind,
             shared_secret,
             lightwalletd_url,
+            db_path,
             network,
             seed,
         })

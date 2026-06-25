@@ -36,14 +36,20 @@ axum = "0.8.9"
 faucet-core = { path = "crates/faucet-core" }
 getrandom = { version = "0.3", features = ["wasm_js"] }
 hex = "0.4.3"
+orchard = "0.14"
+rand = "0.8"
+secrecy = "0.8"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
-sha2 = "0.11.0"
+# sha2 0.10 (not 0.11) so it coexists with the prerelease sha2 the git-pinned
+# librustzcash stack pulls via bip32.
+sha2 = "0.10"
 thiserror = "2.0.18"
 tokio = { version = "1.52.3", default-features = false, features = [
     "rt-multi-thread",
     "macros",
     "net",
+    "time",
 ] }
 tower = "0.5"
 tracing = "0.1.44"
@@ -53,3 +59,29 @@ worker = { version = "0.8.5", features = ["d1"] }
 zcash_address = "0.12.0"
 zcash_protocol = "0.9.0"
 zeroize = "1.9.0"
+zip32 = "0.2.1"
+
+# Signer wallet engine, pinned to librustzcash main (the consistent latest;
+# the latest crates.io pair does not compile together). Orchard 0.14 is the
+# latest non-yanked release on crates.io.
+[workspace.dependencies.zcash_client_backend]
+git = "https://github.com/zcash/librustzcash"
+rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23"
+default-features = false
+features = [
+    "lightwalletd-tonic-transport",
+    "orchard",
+    "sync",
+    "transparent-inputs",
+]
+[workspace.dependencies.zcash_client_sqlite]
+git = "https://github.com/zcash/librustzcash"
+rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23"
+features = ["orchard", "transparent-inputs"]
+[workspace.dependencies.zcash_keys]
+git = "https://github.com/zcash/librustzcash"
+rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23"
+features = ["orchard", "transparent-inputs"]
+[workspace.dependencies.zcash_primitives]
+git = "https://github.com/zcash/librustzcash"
+rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23"

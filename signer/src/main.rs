@@ -1,6 +1,6 @@
 //! Faucet signer service entry point.
 //!
-//! Native HTTP service that runs on the node host next to zcashd + lightwalletd.
+//! Native HTTP service that runs on the node host next to zebra + zaino.
 //! It holds the faucet seed and (once the wallet engine is wired, see
 //! [`faucet_signer::wallet`]) builds, proves, and broadcasts transparent and
 //! Orchard transactions. The Cloudflare Worker calls `/send` over a Cloudflare
@@ -31,7 +31,12 @@ async fn main() {
 
     let bind = config.bind.clone();
     let state = Arc::new(AppState::new(
-        Wallet::new(config.network, config.lightwalletd_url, config.seed),
+        Wallet::new(
+            config.network,
+            config.lightwalletd_url,
+            config.db_path,
+            config.seed,
+        ),
         config.shared_secret,
         config.network,
     ));

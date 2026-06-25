@@ -21,11 +21,11 @@ The system is three deployables plus shared Rust crates in one workspace.
 |  Frontend (Pages) | ---> |  Worker API (workers-rs) | ---> |  Signer (native Rust, axum) |
 |  SvelteKit +      | HTTP |  + D1 (users/OTP/drips)  | HTTP |  holds seed, builds/proves  |
 |  Tailwind + WASM  |      |  Resend OTP, Basic Auth, |      |  via librustzcash, then     |
-|  addr validation  |      |  rate limit, cooldown    |      |  broadcasts to zcashd       |
+|  addr validation  |      |  rate limit, cooldown    |      |  broadcasts via zaino       |
 +-------------------+      +--------------------------+      +-----------------------------+
                                                                    |            ^
                                                                    v            |
-                                                          zcashd (testnet) + lightwalletd
+                                                          zebra (testnet) + zaino (lightwalletd gRPC)
 ```
 
 Why the split: Orchard (halo2) proving cannot run inside a Cloudflare Worker
@@ -43,7 +43,7 @@ channel (Cloudflare Tunnel).
 | `worker`                   | Cloudflare Worker (Rust) + D1 migrations                    |
 | `signer`                   | Native axum service: seed, build/prove/sign, broadcast      |
 | `frontend`                 | SvelteKit + Tailwind UI                                      |
-| `deploy`                   | docker-compose: zcashd + lightwalletd + signer + cloudflared |
+| `deploy`                   | docker-compose: signer + cloudflared (zebra + zaino run on the host) |
 
 ## Development
 

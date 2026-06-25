@@ -22,12 +22,11 @@ CI to catch advisories and license drift.
 | `tracing`, `tracing-subscriber` | 0.1 / 0.3 | signer | Structured logging. |
 | `thiserror` | 2.0 | signer | Error types. |
 | `zeroize` | 1.9 | signer | Scrub the faucet seed + auth secret in memory. |
-| `zcash_client_backend` | pending (0.23 planned) | signer | Wallet engine: note scanning, proposals, proving. |
-| `zcash_client_sqlite` | pending | signer | Wallet data store (notes, witnesses, tree). |
-| `zcash_primitives` | pending | signer | Transparent tx building, primitives. |
-| `orchard` | pending | signer | Orchard (halo2) note/proof construction. |
-| `incrementalmerkletree`, `shardtree` | pending | signer | Note commitment tree + witnesses (via client_backend). |
-| `k256` | pending | signer | secp256k1 signing (transparent inputs). |
+| `zcash_client_backend`, `zcash_client_sqlite`, `zcash_primitives`, `zcash_protocol` | librustzcash git `main` @ `8a0ae65` | signer | Wallet engine (the latest crates.io pair does not compile together; see deny.toml `allow-git`). |
+| `orchard` | 0.14 | signer (via backend feature) | Orchard (halo2) proving. |
+| `secrecy`, `rand`, `hex` | 0.8 / 0.8 / 0.4 | signer | Seed handling (SecretVec), OsRng, hex decode. |
+| `incrementalmerkletree`, `shardtree` | via client_backend | signer | Note commitment tree + witnesses. |
+| `k256` | pending | signer | secp256k1 signing (transparent inputs), added with the broadcast step. |
 
 ## Notes
 

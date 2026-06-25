@@ -13,6 +13,8 @@ pub enum SignerError {
     BadRequest(String),
     #[error("wallet engine not ready: {0}")]
     NotReady(String),
+    #[error("internal error")]
+    Internal(String),
 }
 
 impl IntoResponse for SignerError {
@@ -21,6 +23,7 @@ impl IntoResponse for SignerError {
             SignerError::Unauthorized => StatusCode::UNAUTHORIZED,
             SignerError::BadRequest(_) => StatusCode::BAD_REQUEST,
             SignerError::NotReady(_) => StatusCode::SERVICE_UNAVAILABLE,
+            SignerError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         (
             status,
