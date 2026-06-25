@@ -22,8 +22,8 @@ npx wrangler secret put RESEND_API_TOKEN
 npx wrangler secret put BASIC_AUTH_B64          # base64("user:pass")
 npx wrangler secret put SIGNER_SHARED_SECRET
 npx wrangler secret put OTP_HASH_SALT
-# set SIGNER_URL in wrangler.toml to the tunnel hostname + /api is NOT needed;
-# the signer endpoint is its own hostname, e.g. https://signer.example/send
+# In wrangler.toml set SIGNER_URL to the signer's tunnel BASE URL (no path);
+# the Worker appends /send and /balance, e.g. https://signer.example
 ```
 
 Deploy the Worker (CI does this on push to main, or manually):
@@ -55,10 +55,18 @@ GitHub Actions needs repo secrets `CLOUDFLARE_API_TOKEN` and
 
 ## 4. Node: zebra + zaino (your host)
 
-The signer syncs and broadcasts through a local **zaino** (which serves the
-lightwalletd gRPC protocol), backed by **zebrad** on testnet. Run both on the
-host (zebrad fully synced to testnet, zaino pointed at zebrad's RPC), then set
-`LIGHTWALLETD_URL` to zaino's gRPC address.
+The signer syncs and broadcasts through a lightwalletd-protocol server. By
+default it uses the public `https://testnet.zec.rocks:443` (the server the
+zodl mobile apps use), so no local node is required to get started. To run your
+own, bring up **zaino** (which serves the lightwalletd gRPC protocol) backed by
+**zebrad** on testnet, and set `LIGHTWALLETD_URL` to zaino's address (e.g.
+`http://127.0.0.1:8137`). The signer enables TLS automatically for `https://`
+endpoints.
+
+The faucet is typically funded by mining rewards, which arrive as **transparent
+coinbase**. Those cannot be sent directly; the signer shields them into the
+Orchard pool (only coinbase with >= 100 confirmations is selected) before they
+can be dripped. See the maintenance cron below to automate this.
 
 ## 5. Signer (your host)
 
@@ -74,9 +82,35 @@ The signer is never published on a host port. The containerized signer reaches
 zaino on the host via `host.docker.internal`; the wallet DB persists on the
 `faucet-data` volume.
 
-> Status: the signer opens its wallet DB, runs migrations, and derives the
-> faucet account from the seed on first run (verified by the integration
-> tests). The live sync + proposal + Orchard/transparent proving + broadcast
-> against zebra + zaino is the remaining step (`signer/src/wallet.rs`); until
-> it is enabled `/send` returns 503. Everything else (auth, OTP, cooldown, UI)
-> is functional.
+## 6. Maintenance cron (auto-shield + balance)
+
+`faucet-maintenance.sh` shields matured coinbase into Orchard and pushes the
+faucet's per-pool balance to the Worker (`POST /api/internal/balance`), which
+serves it to the frontend "Faucet reserves" panel. This push is **outbound**
+from the host, so the balance works even without the inbound tunnel. Run it on
+a timer:
+
+```bash
+# crontab on the signer host, every 10 minutes:
+*/10 * * * * SIGNER_SHARED_SECRET=... \
+  WORKER_URL=https://faucet-zcash-api.<acct>.workers.dev \
+  /opt/faucet/deploy/faucet-maintenance.sh >> /var/log/faucet-maintenance.log 2>&1
+```
+
+`WORKER_URL` is the Worker origin (`*.workers.dev`), not the Pages domain, so
+the push bypasses the Basic Auth gate (it authenticates with the signer
+secret).
+
+## Status
+
+The signer wallet engine is implemented end-to-end against the lightwalletd
+protocol: derive account, sync (with 429 back-off and TLS), shield transparent
+coinbase into Orchard, build + prove (Orchard halo2 / transparent secp256k1) +
+broadcast, and report per-pool balance (`signer/src/wallet.rs`). The drip path
+(`POST /api/faucet/drip` -> Worker -> signer `/send`) needs the inbound tunnel
+(`SIGNER_URL`) configured; the balance panel does not (it uses the outbound
+push above).
+
+Known limitation: a light client cannot tell from the lightwalletd protocol
+whether a transparent UTXO is coinbase, so coinbase maturity is enforced via a
+100-confirmation policy on transparent inputs rather than the coinbase flag.
