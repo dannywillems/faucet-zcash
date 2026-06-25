@@ -40,6 +40,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   zebra 429 rate-limits), builds + proves (Orchard/transparent) and broadcasts
   via `send_transaction`, returning the txid; `SIGNER_BIRTHDAY_HEIGHT` bounds
   the initial scan.
+- Signer supports TLS lightwalletd endpoints and defaults to
+  `https://testnet.zec.rocks:443` (overridable to a local zaino).
+- Server-side logout (`/api/auth/logout`) and a session-aware frontend that
+  restores the signed-in state on load and offers a log-out control.
+- Frontend `/api/*` is proxied to the Worker by a Pages Function (same origin),
+  and the Worker restricts OTP recipients to an email-domain allowlist.
 
 ### Changed
 
