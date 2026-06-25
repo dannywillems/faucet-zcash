@@ -340,7 +340,7 @@
       How it works
     </summary>
     <div class="mt-3 space-y-3">
-      {#snippet code(path: string)}
+      {#snippet srcLink(path: string)}
         <a
           href={`https://github.com/dannywillems/faucet-zcash/blob/main/${path}`}
           target="_blank"
@@ -358,13 +358,13 @@
       <ol class="list-decimal space-y-2 pl-5">
         <li>
           <span class="font-medium">Access gate.</span> The whole site is behind
-          HTTP Basic Auth to keep bots out. {@render code(
+          HTTP Basic Auth to keep bots out. {@render srcLink(
             'frontend/functions/_middleware.ts',
           )}
         </li>
         <li>
           <span class="font-medium">Email verification.</span> You request a
-          one-time code, sent by email (Resend); verifying it opens a session. {@render code(
+          one-time code, sent by email (Resend); verifying it opens a session. {@render srcLink(
             'worker/src/lib.rs',
           )}
         </li>
@@ -374,7 +374,7 @@
           <code>zcash_address</code> logic the backend uses), then re-validated
           server-side. Transparent and Orchard unified addresses are accepted;
           Sapling is not supported.
-          {@render code('crates/faucet-addr-wasm/src/lib.rs')}
+          {@render srcLink('crates/faucet-addr-wasm/src/lib.rs')}
         </li>
         <li>
           <span class="font-medium">Building the transaction.</span> A backend
@@ -382,7 +382,7 @@
           <code>zcash_client_sqlite</code> to track the faucet's notes and
           nullifiers. It selects inputs, then builds, proves (Orchard via halo2;
           transparent via secp256k1) and signs the transaction. The browser and
-          the edge Worker never see the seed. {@render code(
+          the edge Worker never see the seed. {@render srcLink(
             'signer/src/wallet.rs',
           )}
         </li>
@@ -392,14 +392,14 @@
           cannot be sent directly, so the signer automatically shields them into
           the Orchard pool (after the 100-block coinbase maturity) before
           dripping. That is why the reserves above show a transparent balance
-          that becomes spendable shielded funds. {@render code(
+          that becomes spendable shielded funds. {@render srcLink(
             'deploy/faucet-maintenance.sh',
           )}
         </li>
         <li>
           <span class="font-medium">Broadcast.</span> The signed transaction is
           broadcast to a Zcash testnet node over the lightwalletd protocol, and
-          the resulting txid is shown to you with an explorer link. {@render code(
+          the resulting txid is shown to you with an explorer link. {@render srcLink(
             'signer/src/wallet.rs',
           )}
         </li>
