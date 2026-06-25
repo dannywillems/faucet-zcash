@@ -31,6 +31,8 @@
   let email = $state('');
   let code = $state('');
   let address = $state('');
+  // Optional memo, only meaningful for shielded (Orchard) destinations.
+  let memo = $state('');
 
   // True while we check (on load) whether a session cookie is already valid.
   let checking = $state(true);
@@ -141,7 +143,10 @@
     error = '';
     busy = true;
     try {
-      drip = await api.drip(address.trim());
+      // Only shielded (Orchard) destinations carry a memo.
+      const m =
+        check?.pool === 'orchard' && memo.trim() ? memo.trim() : undefined;
+      drip = await api.drip(address.trim(), m);
       await refreshStats();
     } catch (e) {
       error = e instanceof ApiError ? e.message : 'Something went wrong.';
@@ -155,6 +160,7 @@
     email = '';
     code = '';
     address = '';
+    memo = '';
     check = null;
     drip = null;
     error = '';
@@ -326,6 +332,28 @@
           <p class="text-sm text-green-600 dark:text-green-400">
             Valid testnet address ({check.pool}).
           </p>
+        {/if}
+
+        {#if addressValid && check?.pool === 'orchard'}
+          <label class="block">
+            <span class="mb-1 block text-sm font-medium">
+              Memo
+              <span class="font-normal text-zinc-500 dark:text-zinc-400">
+                (optional)
+              </span>
+            </span>
+            <textarea
+              bind:value={memo}
+              rows="2"
+              maxlength="512"
+              placeholder="Attached to the shielded output"
+              class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 dark:border-zinc-700 dark:bg-zinc-950"
+            ></textarea>
+            <span class="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">
+              {memo.length}/512 - only shielded (Orchard) addresses carry a
+              memo.
+            </span>
+          </label>
         {/if}
 
         <button

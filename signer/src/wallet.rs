@@ -205,8 +205,23 @@ impl Wallet {
         &self,
         address: &str,
         amount_zat: u64,
-        _pool: Pool,
+        pool: Pool,
+        memo: Option<String>,
     ) -> Result<String, SignerError> {
+        // A memo attaches only to a shielded (Orchard) output.
+        let memo_bytes = match memo.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
+            Some(_) if matches!(pool, Pool::Transparent) => {
+                return Err(SignerError::BadRequest(
+                    "memo is not supported for transparent addresses".to_string(),
+                ));
+            }
+            Some(m) => Some(
+                zcash_protocol::memo::MemoBytes::from_bytes(m.as_bytes())
+                    .map_err(|e| SignerError::BadRequest(format!("invalid memo: {e}")))?,
+            ),
+            None => None,
+        };
+
         let params = self.zcash_network();
         let mut db = self.open_db()?;
         let account_id = self.ensure_account_in(&mut db)?;
@@ -238,7 +253,7 @@ impl Wallet {
             ConfirmationsPolicy::default(),
             &to,
             amount,
-            None,
+            memo_bytes,
             None,
             ShieldedProtocol::Orchard,
             None,

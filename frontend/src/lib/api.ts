@@ -134,7 +134,7 @@ export const api = {
   stats(): Promise<FaucetStats> {
     return request('/faucet/stats', 'GET');
   },
-  drip(address: string): Promise<DripResult> {
-    return request('/faucet/drip', 'POST', { address });
+  drip(address: string, memo?: string): Promise<DripResult> {
+    return request('/faucet/drip', 'POST', { address, memo });
   },
 };

@@ -55,6 +55,8 @@ struct VerifyOtpBody {
 #[derive(Deserialize)]
 struct DripBody {
     address: String,
+    #[serde(default)]
+    memo: Option<String>,
 }
 
 // D1 row helpers.
@@ -294,6 +296,26 @@ async fn handle_drip(mut req: Request, ctx: RouteContext<()>) -> Result<Response
     };
     let address = body.address.trim().to_string();
 
+    // Memos attach only to a shielded (Orchard) output; reject otherwise.
+    let memo = match body
+        .memo
+        .as_deref()
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+    {
+        None => None,
+        Some(_) if valid.pool == faucet_core::Pool::Transparent => {
+            return error_json(
+                400,
+                "Memos are only supported for shielded (Orchard / unified) addresses.",
+            );
+        }
+        Some(m) if m.len() > faucet_core::MEMO_MAX_BYTES => {
+            return error_json(400, "Memo is too long (max 512 bytes).");
+        }
+        Some(m) => Some(m.to_string()),
+    };
+
     let db = ctx.env.d1("DB")?;
     let now = now_secs();
     let cooldown: i64 = var_i64(&ctx, "COOLDOWN_SECONDS", 86_400);
@@ -323,7 +345,7 @@ async fn handle_drip(mut req: Request, ctx: RouteContext<()>) -> Result<Response
              above is live; once the tunnel is configured, drips will work.",
         );
     }
-    let txid = match call_signer(&ctx, &address, amount_zat, valid.pool).await {
+    let txid = match call_signer(&ctx, &address, amount_zat, valid.pool, memo).await {
         Ok(t) => t,
         Err(_) => {
             return error_json(
@@ -479,6 +501,7 @@ async fn call_signer(
     address: &str,
     amount_zat: u64,
     pool: faucet_core::Pool,
+    memo: Option<String>,
 ) -> Result<String> {
     let url = format!("{}/send", var_str(ctx, "SIGNER_URL", ""));
     let secret = secret(ctx, "SIGNER_SHARED_SECRET")?;
@@ -486,6 +509,7 @@ async fn call_signer(
         address: address.to_string(),
         amount_zat,
         pool,
+        memo,
     };
     let body = serde_json::to_string(&payload).map_err(|e| Error::RustError(e.to_string()))?;
 

@@ -113,7 +113,7 @@ async fn handle_send(
 
     let txid = state
         .wallet
-        .send(&req.address, req.amount_zat, req.pool)
+        .send(&req.address, req.amount_zat, req.pool, req.memo)
         .await?;
     Ok(Json(SignerSendResponse { txid }))
 }

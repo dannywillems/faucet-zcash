@@ -196,6 +196,10 @@ pub fn validate_destination(
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DripRequest {
     pub address: String,
+    /// Optional memo, attached to the shielded (Orchard) output. Ignored for
+    /// transparent destinations (transparent outputs cannot carry a memo).
+    #[serde(default)]
+    pub memo: Option<String>,
 }
 
 /// Successful drip result returned to the frontend.
@@ -213,7 +217,14 @@ pub struct SignerSendRequest {
     pub address: String,
     pub amount_zat: u64,
     pub pool: Pool,
+    /// Optional memo for the shielded output (max 512 bytes). Only valid when
+    /// `pool` is `Orchard`.
+    #[serde(default)]
+    pub memo: Option<String>,
 }
+
+/// Maximum Zcash memo size, in bytes.
+pub const MEMO_MAX_BYTES: usize = 512;
 
 /// Response from the signer service after broadcasting.
 #[derive(Debug, Clone, Serialize, Deserialize)]
