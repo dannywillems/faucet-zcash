@@ -30,6 +30,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Dockerfile + docker-compose (with cloudflared tunnel), and a deploy runbook.
 - Signer split into lib + bin with end-to-end service tests (auth, address
   validation, routing, error mapping).
+- Signer wallet engine on the latest librustzcash (git-pinned `main`, Orchard
+  0.14): opens the wallet DB, migrates, and derives the faucet account from the
+  seed (runtime-tested). Config and deploy target a local zaino + zebrad. Live
+  sync/broadcast is the remaining step.
 
 ### Changed
 
