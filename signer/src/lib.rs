@@ -1,6 +1,7 @@
 //! Faucet signer library: the HTTP app (router, state, handlers) so it can be
 //! driven both by the binary (`main.rs`) and by integration tests.
 
+pub mod blockcache;
 pub mod config;
 pub mod error;
 pub mod wallet;

@@ -13,11 +13,13 @@ rust-version.workspace = true
 all = "warn"
 
 [dependencies]
+async-trait = { workspace = true }
 axum = { workspace = true }
 bip0039 = { workspace = true }
 faucet-core = { workspace = true }
 hex = { workspace = true }
 rand = { workspace = true }
+rusqlite = { workspace = true }
 secrecy = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -27,8 +29,11 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 zcash_client_backend = { workspace = true }
 zcash_client_sqlite = { workspace = true }
+zcash_keys = { workspace = true }
 zcash_primitives = { workspace = true }
+zcash_proofs = { workspace = true }
 zeroize = { workspace = true }
+zip32 = { workspace = true }
 # Direct git dep (not via the workspace table, which holds the crates.io 0.9
 # used by faucet-core/worker for wasm): the wallet engine needs the same
 # librustzcash-main Network type as WalletDb.

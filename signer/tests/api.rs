@@ -1,10 +1,10 @@
 //! End-to-end tests for the signer HTTP service. These drive the real router
-//! (auth, address re-validation, routing, error mapping) without a live node;
-//! the transaction engine itself returns 503 until wired (see wallet.rs).
+//! (auth, address re-validation, routing, error mapping) and the offline wallet
+//! engine (account derivation), without a live node.
 
 use std::sync::Arc;
 
-use axum::body::{to_bytes, Body};
+use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use faucet_core::Network;
 use faucet_signer::wallet::Wallet;
@@ -24,6 +24,7 @@ fn app() -> axum::Router {
         Network::Testnet,
         "http://127.0.0.1:8137".to_string(),
         ":memory:".to_string(),
+        None,
         Zeroizing::new(SEED_HEX.to_string()),
     );
     let state = Arc::new(AppState::new(
@@ -43,12 +44,6 @@ fn send_request(auth: Option<&str>, body: &str) -> Request<Body> {
         builder = builder.header("Authorization", format!("Bearer {token}"));
     }
     builder.body(Body::from(body.to_string())).unwrap()
-}
-
-async fn status_and_body(response: axum::response::Response) -> (StatusCode, String) {
-    let status = response.status();
-    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    (status, String::from_utf8_lossy(&bytes).to_string())
 }
 
 #[tokio::test]
@@ -116,6 +111,7 @@ fn ensure_account_creates_and_persists() {
         Network::Testnet,
         "http://127.0.0.1:8137".to_string(),
         path.to_string_lossy().to_string(),
+        None,
         Zeroizing::new(SEED_HEX.to_string()),
     );
 
@@ -126,17 +122,6 @@ fn ensure_account_creates_and_persists() {
     let _ = std::fs::remove_file(&path);
 }
 
-#[tokio::test]
-async fn send_with_valid_address_reaches_engine() {
-    // Authorized + valid testnet address: passes auth and validation, then the
-    // (not-yet-wired) engine reports 503 Service Unavailable.
-    let body =
-        format!(r#"{{"address":"{TESTNET_T}","amount_zat":100000000,"pool":"transparent"}}"#);
-    let response = app()
-        .oneshot(send_request(Some(SECRET), &body))
-        .await
-        .unwrap();
-    let (status, body) = status_and_body(response).await;
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert!(body.contains("not yet"), "unexpected body: {body}");
-}
+// Note: a fully authorized + valid /send now drives the real engine (sync +
+// prove + broadcast against zaino), which requires the live local node and a
+// funded wallet, so it is verified manually rather than in CI.

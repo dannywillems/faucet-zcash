@@ -1,40 +1,54 @@
 //! Faucet wallet engine.
 //!
 //! Holds the seed and uses the Rust Zcash stack (librustzcash pinned to git
-//! main, Orchard 0.14) to build, prove, and broadcast transactions.
+//! main, Orchard 0.14) to derive the faucet account, sync it from the local
+//! zaino (lightwalletd gRPC, backed by zebrad), and build, prove, and broadcast
+//! transparent + Orchard transactions. Sapling is never used as an output, but
+//! `create_proposed_transactions` still requires a Sapling prover argument, so
+//! the host must have the Sapling parameters (`~/.zcash-params`).
 //!
-//! What is implemented and verifiable offline:
-//! - [`Wallet::ensure_account`] opens the `WalletDb` (SQLite), runs migrations,
-//!   and derives/creates the faucet account from the seed. This is exercised by
-//!   the integration tests against an in-memory database.
-//!
-//! What remains (requires the live local zebra + zaino and a funded faucet
-//! wallet to verify end to end, so it is implemented separately):
-//! - sync the account via `zcash_client_backend::sync::run` against zaino's
-//!   lightwalletd gRPC (`CompactTxStreamerClient`),
-//! - `propose_standard_transfer_to_address` for `amount_zat` to the recipient,
-//! - `create_proposed_transactions` with the Orchard proving key + transparent
-//!   keys (Sapling never used),
-//! - broadcast with `CompactTxStreamerClient::send_transaction` and return txid.
+//! The implementation mirrors the official `zcash-devtool` send flow.
 
-use faucet_core::{Network, Pool};
 use rand::rngs::OsRng;
-use secrecy::SecretVec;
+use secrecy::{ExposeSecret, SecretVec};
+use tonic::transport::Channel;
 use zcash_client_backend::data_api::chain::ChainState;
+use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError;
+use zcash_client_backend::data_api::wallet::{
+    create_proposed_transactions, propose_standard_transfer_to_address, ConfirmationsPolicy,
+    SpendingKeys,
+};
 use zcash_client_backend::data_api::{AccountBirthday, WalletRead, WalletWrite};
+use zcash_client_backend::fees::StandardFeeRule;
+use zcash_client_backend::proto::service::{
+    self, compact_tx_streamer_client::CompactTxStreamerClient, Empty,
+};
+use zcash_client_backend::wallet::OvkPolicy;
 use zcash_client_sqlite::util::SystemClock;
+use zcash_client_sqlite::wallet::commitment_tree;
 use zcash_client_sqlite::{AccountUuid, WalletDb};
+use zcash_keys::address::Address;
+use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::block::BlockHash;
-use zcash_protocol::consensus::{Network as ZNetwork, NetworkUpgrade, Parameters};
+use zcash_proofs::prover::LocalTxProver;
+use zcash_protocol::consensus::{BlockHeight, Network as ZNetwork, NetworkUpgrade, Parameters};
+use zcash_protocol::value::Zatoshis;
+use zcash_protocol::ShieldedProtocol;
 use zeroize::Zeroizing;
 
+use faucet_core::{Network, Pool};
+
 use crate::error::SignerError;
+
+/// Wallet DB concrete type (file or `:memory:` SQLite, system clock, OS RNG).
+type Db = WalletDb<rusqlite::Connection, ZNetwork, SystemClock, OsRng>;
 
 pub struct Wallet {
     network: Network,
     lightwalletd_url: String,
     db_path: String,
-    /// Faucet seed (hex), held only in scrubbed memory.
+    birthday_height: Option<u32>,
+    /// Faucet seed (BIP39 mnemonic or hex), held only in scrubbed memory.
     seed: Zeroizing<String>,
 }
 
@@ -43,12 +57,14 @@ impl Wallet {
         network: Network,
         lightwalletd_url: String,
         db_path: String,
+        birthday_height: Option<u32>,
         seed: Zeroizing<String>,
     ) -> Self {
         Self {
             network,
             lightwalletd_url,
             db_path,
+            birthday_height,
             seed,
         }
     }
@@ -79,32 +95,39 @@ impl Wallet {
         Ok(SecretVec::new(bytes))
     }
 
-    /// Open the wallet database (creating and migrating it on first run) and
-    /// ensure the faucet account exists, returning its id. Fully offline.
-    pub fn ensure_account(&self) -> Result<AccountUuid, SignerError> {
-        let params = self.zcash_network();
-        let mut db = WalletDb::for_path(&self.db_path, params, SystemClock, OsRng)
+    fn birthday(&self, params: &ZNetwork) -> Result<AccountBirthday, SignerError> {
+        let height = match self.birthday_height {
+            Some(h) => BlockHeight::from_u32(h),
+            None => params
+                .activation_height(NetworkUpgrade::Nu5)
+                .ok_or_else(|| {
+                    SignerError::Internal("NU5 activation height is not set".to_string())
+                })?,
+        };
+        Ok(AccountBirthday::from_parts(
+            ChainState::empty(height - 1, BlockHash([0u8; 32])),
+            None,
+        ))
+    }
+
+    /// Open the wallet DB and run migrations.
+    fn open_db(&self) -> Result<Db, SignerError> {
+        let mut db = WalletDb::for_path(&self.db_path, self.zcash_network(), SystemClock, OsRng)
             .map_err(|e| SignerError::Internal(format!("open wallet db: {e}")))?;
         zcash_client_sqlite::wallet::init::init_wallet_db(&mut db, None)
             .map_err(|e| SignerError::Internal(format!("init wallet db: {e}")))?;
+        Ok(db)
+    }
 
+    /// Ensure the faucet account exists in `db`, returning its id. Offline.
+    fn ensure_account_in(&self, db: &mut Db) -> Result<AccountUuid, SignerError> {
         let ids = db
             .get_account_ids()
             .map_err(|e| SignerError::Internal(format!("list accounts: {e}")))?;
         if let Some(id) = ids.first() {
             return Ok(*id);
         }
-
-        // First run: create the faucet account from the seed, with a birthday
-        // at NU5 (Orchard) activation (the public equivalent of the test-only
-        // `from_activation` helper).
-        let activation = params
-            .activation_height(NetworkUpgrade::Nu5)
-            .ok_or_else(|| SignerError::Internal("NU5 activation height is not set".to_string()))?;
-        let birthday = AccountBirthday::from_parts(
-            ChainState::empty(activation - 1, BlockHash([0u8; 32])),
-            None,
-        );
+        let birthday = self.birthday(&self.zcash_network())?;
         let seed = self.seed_secret()?;
         let (account_id, _usk) = db
             .create_account("faucet", &seed, &birthday, None)
@@ -112,19 +135,25 @@ impl Wallet {
         Ok(account_id)
     }
 
-    /// Connect to the configured zaino (lightwalletd gRPC) and return the
-    /// current chain tip height. Verifies live connectivity to the node.
-    pub async fn chain_height(&self) -> Result<u64, SignerError> {
-        use zcash_client_backend::proto::service::{
-            compact_tx_streamer_client::CompactTxStreamerClient, Empty,
-        };
+    /// Ensure the faucet account exists (opens its own DB). Offline.
+    pub fn ensure_account(&self) -> Result<AccountUuid, SignerError> {
+        let mut db = self.open_db()?;
+        self.ensure_account_in(&mut db)
+    }
 
-        let channel = tonic::transport::Channel::from_shared(self.lightwalletd_url.clone())
+    /// Connect to the configured zaino (lightwalletd gRPC).
+    async fn connect(&self) -> Result<CompactTxStreamerClient<Channel>, SignerError> {
+        let channel = Channel::from_shared(self.lightwalletd_url.clone())
             .map_err(|e| SignerError::Internal(format!("bad lightwalletd url: {e}")))?
             .connect()
             .await
             .map_err(|e| SignerError::Internal(format!("connect to zaino: {e}")))?;
-        let mut client = CompactTxStreamerClient::new(channel);
+        Ok(CompactTxStreamerClient::new(channel))
+    }
+
+    /// Current chain tip height reported by zaino. Verifies connectivity.
+    pub async fn chain_height(&self) -> Result<u64, SignerError> {
+        let mut client = self.connect().await?;
         let info = client
             .get_lightd_info(Empty {})
             .await
@@ -134,25 +163,98 @@ impl Wallet {
     }
 
     /// Build, prove, and broadcast a transaction sending `amount_zat` to
-    /// `address` in the given `pool`, returning the broadcast txid.
+    /// `address`, returning the broadcast txid. Syncs the wallet first.
     pub async fn send(
         &self,
         address: &str,
         amount_zat: u64,
-        pool: Pool,
+        _pool: Pool,
     ) -> Result<String, SignerError> {
-        // Offline: ensure the wallet DB + faucet account exist.
-        let account = self.ensure_account()?;
-        tracing::info!(
-            ?account,
-            lightwalletd = %self.lightwalletd_url,
-            %address,
-            amount_zat,
-            ?pool,
-            "faucet account ready; live sync + broadcast against zebra + zaino pending",
-        );
-        Err(SignerError::NotReady(
-            "live sync and broadcast against zebra + zaino is not yet enabled".to_string(),
-        ))
+        let params = self.zcash_network();
+        let mut db = self.open_db()?;
+        let account_id = self.ensure_account_in(&mut db)?;
+
+        // Sync the wallet from zaino into an in-memory compact-block cache.
+        let mut client = self.connect().await?;
+        let db_cache = crate::blockcache::MemBlockCache::new();
+        zcash_client_backend::sync::run(&mut client, &params, &db_cache, &mut db, 10_000)
+            .await
+            .map_err(|e| SignerError::Internal(format!("sync: {e}")))?;
+
+        // Build and prove the transfer.
+        let prover = LocalTxProver::with_default_location().ok_or_else(|| {
+            SignerError::Internal(
+                "Sapling params not found in ~/.zcash-params (run fetch-params)".to_string(),
+            )
+        })?;
+        let seed = self.seed_secret()?;
+        let usk =
+            UnifiedSpendingKey::from_seed(&params, seed.expose_secret(), zip32::AccountId::ZERO)
+                .map_err(|e| SignerError::Internal(format!("derive spending key: {e}")))?;
+        let to = Address::decode(&params, address)
+            .ok_or_else(|| SignerError::BadRequest("unparseable address".to_string()))?;
+        let amount = Zatoshis::from_u64(amount_zat)
+            .map_err(|_| SignerError::Internal("bad amount".into()))?;
+
+        let proposal = propose_standard_transfer_to_address::<_, _, commitment_tree::Error>(
+            &mut db,
+            &params,
+            StandardFeeRule::Zip317,
+            account_id,
+            ConfirmationsPolicy::default(),
+            &to,
+            amount,
+            None,
+            None,
+            ShieldedProtocol::Orchard,
+            None,
+        )
+        .map_err(|e| SignerError::Internal(format!("propose: {e}")))?;
+
+        let txids = create_proposed_transactions::<
+            _,
+            _,
+            GreedyInputSelectorError,
+            _,
+            zcash_primitives::transaction::fees::zip317::FeeError,
+            _,
+        >(
+            &mut db,
+            &params,
+            &prover,
+            &prover,
+            &SpendingKeys::from_unified_spending_key(usk),
+            OvkPolicy::Sender,
+            &proposal,
+            None,
+        )
+        .map_err(|e| SignerError::Internal(format!("create transaction: {e}")))?;
+
+        // Broadcast.
+        let mut result_txid = None;
+        for txid in txids.iter() {
+            let tx = db
+                .get_transaction(*txid)
+                .map_err(|e| SignerError::Internal(format!("load transaction: {e}")))?
+                .ok_or_else(|| SignerError::Internal("transaction missing after build".into()))?;
+            let mut raw = service::RawTransaction::default();
+            tx.write(&mut raw.data)
+                .map_err(|e| SignerError::Internal(format!("serialize transaction: {e}")))?;
+            let resp = client
+                .send_transaction(raw)
+                .await
+                .map_err(|e| SignerError::Internal(format!("broadcast: {e}")))?
+                .into_inner();
+            if resp.error_code != 0 {
+                return Err(SignerError::Internal(format!(
+                    "broadcast rejected ({}): {}",
+                    resp.error_code, resp.error_message
+                )));
+            }
+            result_txid = Some(tx.txid());
+        }
+        result_txid
+            .map(|t| t.to_string())
+            .ok_or_else(|| SignerError::Internal("no transaction produced".to_string()))
     }
 }

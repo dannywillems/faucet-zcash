@@ -32,6 +32,7 @@ rust-version = "1.96"
 # All dependencies are declared here and referenced from member crates with
 # `{ workspace = true }`, so versions and features are centralized in one place.
 [workspace.dependencies]
+async-trait = "0.1"
 axum = "0.8.9"
 bip0039 = { version = "0.12", features = ["std"] }
 faucet-core = { path = "crates/faucet-core" }
@@ -39,6 +40,7 @@ getrandom = { version = "0.3", features = ["wasm_js"] }
 hex = "0.4.3"
 orchard = "0.14"
 rand = "0.8"
+rusqlite = "0.37"
 secrecy = "0.8"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
@@ -79,7 +81,10 @@ features = [
 [workspace.dependencies.zcash_client_sqlite]
 git = "https://github.com/zcash/librustzcash"
 rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23"
-features = ["orchard", "transparent-inputs"]
+features = ["orchard", "transparent-inputs", "unstable"]
+[workspace.dependencies.zcash_proofs]
+git = "https://github.com/zcash/librustzcash"
+rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23"
 [workspace.dependencies.zcash_keys]
 git = "https://github.com/zcash/librustzcash"
 rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23"

@@ -16,6 +16,10 @@ pub struct Config {
     pub lightwalletd_url: String,
     /// Path to the wallet SQLite database (created on first run).
     pub db_path: String,
+    /// Account birthday height (the block the faucet wallet was funded near).
+    /// Defaults to NU5 activation, which forces a full scan; set this to avoid
+    /// scanning the whole chain.
+    pub birthday_height: Option<u32>,
     /// Network the faucet operates on (testnet).
     pub network: Network,
     /// The faucet seed (hex), held only in scrubbed memory.
@@ -34,6 +38,9 @@ impl Config {
             .unwrap_or_else(|_| "http://127.0.0.1:8137".to_string());
         let db_path =
             std::env::var("SIGNER_DB_PATH").unwrap_or_else(|_| "faucet-wallet.db".to_string());
+        let birthday_height = std::env::var("SIGNER_BIRTHDAY_HEIGHT")
+            .ok()
+            .and_then(|s| s.parse::<u32>().ok());
         let network = match std::env::var("FAUCET_NETWORK").as_deref() {
             Ok("mainnet") => Network::Mainnet,
             _ => Network::Testnet,
@@ -48,6 +55,7 @@ impl Config {
             shared_secret,
             lightwalletd_url,
             db_path,
+            birthday_height,
             network,
             seed,
         })

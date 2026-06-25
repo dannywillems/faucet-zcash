@@ -35,6 +35,7 @@ async fn main() {
             config.network,
             config.lightwalletd_url,
             config.db_path,
+            config.birthday_height,
             config.seed,
         ),
         config.shared_secret,
