@@ -16,3 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `faucet-addr-wasm`: `wasm-bindgen` validator (`validate_testnet_address`) so
   the frontend reuses the Rust address logic; ~72 KB wasm bundle.
 - `DEPENDENCIES.md` documenting approved crates and resolved versions.
+
+### Infrastructure
+
+- GitHub Actions CI (Rust fmt/clippy/test, wasm builds, `cargo-deny`) and the
+  changelog, PR-hygiene, and shellcheck workflows.
