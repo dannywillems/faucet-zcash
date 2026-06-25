@@ -3,7 +3,7 @@
 # Members build for different targets:
 #   - crates/faucet-core      : shared, compiles to native AND wasm32
 #   - crates/faucet-addr-wasm : wasm-bindgen address validator (frontend)
-#   - signer                  : native axum service (holds seed, proves, broadcasts)
+#   - signer                  : native axum service (seed, prove, broadcast)
 #   - worker                  : Cloudflare Worker (wasm32-unknown-unknown)
 #
 # `worker` and `faucet-addr-wasm` are wasm-only; build them with an explicit
@@ -31,24 +31,12 @@ rust-version = "1.96"
 
 # All dependencies are declared here and referenced from member crates with
 # `{ workspace = true }`, so versions and features are centralized. Grouped by
-# role; alphabetical within each group.
+# role. Entries that would exceed 80 columns use the table form (a TOML inline
+# table cannot wrap), so they are placed after the inline keys.
 [workspace.dependencies]
 
 # Internal crates
 faucet-core = { path = "crates/faucet-core" }
-
-# Zcash. The librustzcash crates are pinned to a git rev because the latest
-# crates.io pair does not compile together; orchard 0.14 is the latest
-# non-yanked crates.io release.
-orchard = "0.14"
-zcash_address = "0.12.0"
-zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23", default-features = false, features = ["lightwalletd-tonic-transport", "orchard", "sync", "transparent-inputs"] }
-zcash_client_sqlite = { git = "https://github.com/zcash/librustzcash", rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23", features = ["orchard", "transparent-inputs", "unstable"] }
-zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23", features = ["orchard", "transparent-inputs"] }
-zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23" }
-zcash_proofs = { git = "https://github.com/zcash/librustzcash", rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23" }
-zcash_protocol = "0.9.0"
-zip32 = "0.2.1"
 
 # Cloudflare Worker runtime
 getrandom = { version = "0.3", features = ["wasm_js"] }
@@ -57,10 +45,9 @@ worker = { version = "0.8.5", features = ["d1"] }
 # Frontend wasm bindings
 wasm-bindgen = "0.2.126"
 
-# Signer HTTP service and async runtime
+# Signer HTTP service and async runtime (tokio is in the table section below)
 async-trait = "0.1"
 axum = "0.8.9"
-tokio = { version = "1.52.3", default-features = false, features = ["rt-multi-thread", "macros", "net", "time"] }
 tonic = "0.14"
 tower = "0.5"
 
@@ -86,3 +73,44 @@ rand = "0.8"
 thiserror = "2.0.18"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
+
+# Signer async runtime
+[workspace.dependencies.tokio]
+version = "1.52.3"
+default-features = false
+features = ["rt-multi-thread", "macros", "net", "time"]
+
+# Zcash. The librustzcash crates are git-pinned (the latest crates.io pair does
+# not compile together); orchard 0.14 is the latest non-yanked crates.io rev.
+[workspace.dependencies.orchard]
+version = "0.14"
+[workspace.dependencies.zcash_address]
+version = "0.12.0"
+[workspace.dependencies.zcash_protocol]
+version = "0.9.0"
+[workspace.dependencies.zip32]
+version = "0.2.1"
+[workspace.dependencies.zcash_client_backend]
+git = "https://github.com/zcash/librustzcash"
+rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23"
+default-features = false
+features = [
+    "lightwalletd-tonic-transport",
+    "orchard",
+    "sync",
+    "transparent-inputs",
+]
+[workspace.dependencies.zcash_client_sqlite]
+git = "https://github.com/zcash/librustzcash"
+rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23"
+features = ["orchard", "transparent-inputs", "unstable"]
+[workspace.dependencies.zcash_keys]
+git = "https://github.com/zcash/librustzcash"
+rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23"
+features = ["orchard", "transparent-inputs"]
+[workspace.dependencies.zcash_primitives]
+git = "https://github.com/zcash/librustzcash"
+rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23"
+[workspace.dependencies.zcash_proofs]
+git = "https://github.com/zcash/librustzcash"
+rev = "8a0ae6537404bb95d0ce0026d14bab290910bf23"
