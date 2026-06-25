@@ -16,6 +16,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `faucet-addr-wasm`: `wasm-bindgen` validator (`validate_testnet_address`) so
   the frontend reuses the Rust address logic; ~72 KB wasm bundle.
 - `DEPENDENCIES.md` documenting approved crates and resolved versions.
+- `faucet-worker`: Cloudflare Worker faucet API on D1 (HTTP Basic Auth gate,
+  Resend email OTP, sessions, per email/address/IP cooldown, signer call), with
+  the D1 schema migration and `wrangler.toml`.
+
+### Changed
+
+- All crate dependencies are centralized in `[workspace.dependencies]` and
+  referenced from member crates with `{ workspace = true }`.
 
 ### Infrastructure
 
