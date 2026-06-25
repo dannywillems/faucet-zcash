@@ -38,8 +38,28 @@ impl AppState {
 pub fn build_app(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/health", get(|| async { "ok" }))
+        .route("/info", get(handle_info))
         .route("/send", post(handle_send))
         .with_state(state)
+}
+
+/// Authenticated diagnostics: confirms the faucet account exists (offline) and
+/// reports the chain tip from the configured zaino (live).
+async fn handle_info(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, SignerError> {
+    authorize(&headers, &state.shared_secret)?;
+    let account = state.wallet.ensure_account()?;
+    let chain_height = state.wallet.chain_height().await?;
+    Ok(Json(serde_json::json!({
+        "network": match state.network {
+            Network::Testnet => "testnet",
+            Network::Mainnet => "mainnet",
+        },
+        "account": format!("{account:?}"),
+        "chain_height": chain_height,
+    })))
 }
 
 async fn handle_send(

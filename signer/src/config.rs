@@ -38,7 +38,11 @@ impl Config {
             Ok("mainnet") => Network::Mainnet,
             _ => Network::Testnet,
         };
-        let seed = Zeroizing::new(required("SIGNER_SEED")?);
+        // Accept SIGNER_SEED, or fall back to SEED (the project .env name).
+        let seed = std::env::var("SIGNER_SEED")
+            .or_else(|_| std::env::var("SEED"))
+            .map(Zeroizing::new)
+            .map_err(|_| "missing required env var SIGNER_SEED (or SEED)".to_string())?;
         Ok(Self {
             bind,
             shared_secret,

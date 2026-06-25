@@ -61,8 +61,16 @@ impl Wallet {
     }
 
     fn seed_secret(&self) -> Result<SecretVec<u8>, SignerError> {
-        let bytes = hex::decode(self.seed.trim())
-            .map_err(|_| SignerError::Internal("seed is not valid hex".to_string()))?;
+        let s = self.seed.trim();
+        // Accept either a BIP39 mnemonic (the project .env form) or raw hex.
+        let bytes = if s.split_whitespace().count() > 1 {
+            let mnemonic = <bip0039::Mnemonic<bip0039::English>>::from_phrase(s)
+                .map_err(|_| SignerError::Internal("invalid BIP39 mnemonic".to_string()))?;
+            mnemonic.to_seed("").to_vec()
+        } else {
+            hex::decode(s)
+                .map_err(|_| SignerError::Internal("seed is not valid hex".to_string()))?
+        };
         if !(32..=252).contains(&bytes.len()) {
             return Err(SignerError::Internal(
                 "seed must decode to 32..=252 bytes".to_string(),
@@ -102,6 +110,27 @@ impl Wallet {
             .create_account("faucet", &seed, &birthday, None)
             .map_err(|e| SignerError::Internal(format!("create account: {e}")))?;
         Ok(account_id)
+    }
+
+    /// Connect to the configured zaino (lightwalletd gRPC) and return the
+    /// current chain tip height. Verifies live connectivity to the node.
+    pub async fn chain_height(&self) -> Result<u64, SignerError> {
+        use zcash_client_backend::proto::service::{
+            compact_tx_streamer_client::CompactTxStreamerClient, Empty,
+        };
+
+        let channel = tonic::transport::Channel::from_shared(self.lightwalletd_url.clone())
+            .map_err(|e| SignerError::Internal(format!("bad lightwalletd url: {e}")))?
+            .connect()
+            .await
+            .map_err(|e| SignerError::Internal(format!("connect to zaino: {e}")))?;
+        let mut client = CompactTxStreamerClient::new(channel);
+        let info = client
+            .get_lightd_info(Empty {})
+            .await
+            .map_err(|e| SignerError::Internal(format!("get_lightd_info: {e}")))?
+            .into_inner();
+        Ok(info.block_height)
     }
 
     /// Build, prove, and broadcast a transaction sending `amount_zat` to
