@@ -99,6 +99,9 @@ export const api = {
   verifyOtp(email: string, code: string): Promise<{ message: string }> {
     return request('/auth/verify-otp', 'POST', { email, code });
   },
+  logout(): Promise<{ message: string }> {
+    return request('/auth/logout', 'POST');
+  },
   status(): Promise<FaucetStatus> {
     return request('/faucet/status', 'GET');
   },

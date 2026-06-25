@@ -26,6 +26,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get("/api/health", |_req, _ctx| Response::ok("ok"))
         .post_async("/api/auth/send-otp", handle_send_otp)
         .post_async("/api/auth/verify-otp", handle_verify_otp)
+        .post_async("/api/auth/logout", handle_logout)
         .get_async("/api/faucet/status", handle_status)
         .post_async("/api/faucet/drip", handle_drip)
         .run(req, env)
@@ -194,6 +195,30 @@ async fn handle_verify_otp(mut req: Request, ctx: RouteContext<()>) -> Result<Re
     let headers = Headers::new();
     headers.set("Set-Cookie", &cookie)?;
     Ok(Response::from_json(&serde_json::json!({ "message": "Signed in." }))?.with_headers(headers))
+}
+
+/// Log out: delete the session server-side and clear the cookie. Idempotent.
+async fn handle_logout(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    if let Some(resp) = require_basic_auth(&req, &ctx)? {
+        return Ok(resp);
+    }
+    if let Some(token) = cookie_value(&req, "session")? {
+        let token_hash = sha256_hex("session", &token);
+        let db = ctx.env.d1("DB")?;
+        db.prepare("DELETE FROM sessions WHERE token_hash = ?1")
+            .bind(&[js(&token_hash)])?
+            .run()
+            .await?;
+    }
+    let headers = Headers::new();
+    headers.set(
+        "Set-Cookie",
+        "session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0",
+    )?;
+    Ok(
+        Response::from_json(&serde_json::json!({ "message": "Signed out." }))?
+            .with_headers(headers),
+    )
 }
 
 async fn handle_status(req: Request, ctx: RouteContext<()>) -> Result<Response> {

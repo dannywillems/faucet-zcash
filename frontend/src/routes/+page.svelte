@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { api, ApiError, type DripResult } from '$lib/api';
   import { validateAddress, type AddressCheck } from '$lib/wasm-validator';
 
@@ -9,9 +10,38 @@
   let code = $state('');
   let address = $state('');
 
+  // True while we check (on load) whether a session cookie is already valid.
+  let checking = $state(true);
   let busy = $state(false);
   let error = $state('');
   let notice = $state('');
+
+  // On load, ask the backend whether the httpOnly session cookie is valid.
+  // The SPA can't read the cookie itself (by design), so the server is the
+  // source of truth for login state.
+  onMount(async () => {
+    try {
+      const status = await api.status();
+      email = status.email;
+      step = 'faucet';
+    } catch {
+      // Not signed in (401) or unreachable; stay on the email step.
+    } finally {
+      checking = false;
+    }
+  });
+
+  async function logout() {
+    busy = true;
+    try {
+      await api.logout();
+    } catch {
+      // Best effort; the cookie is cleared server-side and on response.
+    } finally {
+      busy = false;
+      reset();
+    }
+  }
 
   let check = $state<AddressCheck | null>(null);
   let drip = $state<DripResult | null>(null);
@@ -117,7 +147,11 @@
   <div
     class="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
   >
-    {#if step === 'email'}
+    {#if checking}
+      <p class="text-center text-sm text-zinc-500 dark:text-zinc-400">
+        Checking your session...
+      </p>
+    {:else if step === 'email'}
       <form
         class="space-y-4"
         onsubmit={e => {
@@ -177,6 +211,21 @@
         </button>
       </form>
     {:else}
+      <div
+        class="mb-4 flex items-center justify-between border-b border-zinc-200 pb-3 text-sm dark:border-zinc-800"
+      >
+        <span class="text-zinc-600 dark:text-zinc-400">
+          Signed in as <span class="font-medium">{email}</span>
+        </span>
+        <button
+          type="button"
+          onclick={logout}
+          disabled={busy}
+          class="text-zinc-500 hover:text-zinc-900 hover:underline disabled:opacity-50 dark:hover:text-white"
+        >
+          Log out
+        </button>
+      </div>
       <form
         class="space-y-4"
         onsubmit={e => {
