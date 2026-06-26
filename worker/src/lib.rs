@@ -264,13 +264,35 @@ async fn handle_send_otp(mut req: Request, ctx: RouteContext<()>) -> Result<Resp
         .first(None)
         .await?;
     if recent.map(|r| r.n).unwrap_or(0) > 0 {
-        return error_json(429, "A code was just sent. Please wait a moment.");
+        return error_json(
+            429,
+            "A verification code was already sent to this address. Please wait a \
+             couple of minutes before requesting another one.",
+        );
     }
 
     let code = gen_otp()?;
     let salt = secret(&ctx, "OTP_HASH_SALT")?;
     let code_hash = sha256_hex(&salt, &code);
 
+    // Send the email FIRST, and only record the code if the provider accepted
+    // it. Recording before sending meant a delivery failure (e.g. the provider
+    // refusing the recipient) left a row that then tripped the resend throttle,
+    // so the next attempt confusingly reported "a code was already sent". Log
+    // the provider's detail server-side but never surface it to the caller.
+    let token = secret(&ctx, "RESEND_API_TOKEN")?;
+    let from = var_str(&ctx, "RESEND_FROM", "onboarding@resend.dev");
+    if let Err(e) = send_otp_email(&token, &from, &email, &code).await {
+        console_error!("send-otp: email delivery failed: {e}");
+        return error_json(
+            502,
+            "We couldn't send your verification code right now. This is usually \
+             temporary; please try again in a couple of minutes. If it keeps \
+             failing, contact the faucet administrator.",
+        );
+    }
+
+    // Delivered: record the user and the issued code.
     db.prepare("INSERT OR IGNORE INTO users (email, created_at) VALUES (?1, ?2)")
         .bind(&[js(&email), jsi(now)])?
         .run()
@@ -279,10 +301,6 @@ async fn handle_send_otp(mut req: Request, ctx: RouteContext<()>) -> Result<Resp
         .bind(&[js(&email), js(&code_hash), jsi(now + ttl), jsi(now)])?
         .run()
         .await?;
-
-    let token = secret(&ctx, "RESEND_API_TOKEN")?;
-    let from = var_str(&ctx, "RESEND_FROM", "onboarding@resend.dev");
-    send_otp_email(&token, &from, &email, &code).await?;
 
     Response::from_json(&serde_json::json!({ "message": "Code sent." }))
 }
