@@ -58,6 +58,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the full sync/build/prove/broadcast path on a schedule. Deployed on
   Cloudflare by CI (`deploy-worker`); no host process. Tunable via the
   `HEARTBEAT_AMOUNT_ZAT` Worker var; a no-op until `SIGNER_URL` is set.
+- `deploy/faucet-orchard-generator.sh`: host-side Orchard activity generator
+  (behind the tunnel) that fires a burst (default 10) of small Orchard
+  self-sends per run, intended for a per-minute cron, to keep the Orchard pool
+  continuously active. Tolerates per-transaction failures and uses a
+  single-flight lock so bursts cannot overlap.
 - `docs/INFRASTRUCTURE.md`: how the Worker reaches the host-run signer over a
   Cloudflare Tunnel (outbound-only, no inbound ports), the background-job data
   flow, and the security model; cross-linked from the READMEs.
