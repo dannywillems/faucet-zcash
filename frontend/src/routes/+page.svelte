@@ -6,12 +6,46 @@
     type DripResult,
     type FaucetBalance,
     type FaucetStats,
+    type FaucetServices,
+    type ServiceState,
   } from '$lib/api';
   import { validateAddress, type AddressCheck } from '$lib/wasm-validator';
 
   // Faucet reserves and recent activity, fetched on load (behind the gate).
   let balance = $state<FaucetBalance | null>(null);
   let stats = $state<FaucetStats | null>(null);
+  // Background-service health (worker, signer, node, heartbeat cron).
+  let services = $state<FaucetServices | null>(null);
+
+  // Tailwind classes for a status dot, by coarse service state.
+  function dotClass(status: ServiceState): string {
+    switch (status) {
+      case 'ok':
+        return 'bg-green-500';
+      case 'degraded':
+        return 'bg-amber-500';
+      case 'down':
+        return 'bg-red-500';
+      default:
+        return 'bg-zinc-400 dark:bg-zinc-600';
+    }
+  }
+
+  // Short human label for a service state.
+  function statusLabel(status: ServiceState): string {
+    switch (status) {
+      case 'ok':
+        return 'Operational';
+      case 'degraded':
+        return 'Degraded';
+      case 'down':
+        return 'Down';
+      case 'not_configured':
+        return 'Not configured';
+      default:
+        return 'Unknown';
+    }
+  }
 
   // Format zatoshis as TAZ (testnet ZEC); 1 TAZ = 100_000_000 zat.
   function taz(zat: number): string {
@@ -65,12 +99,21 @@
     } catch {
       stats = null;
     }
+    try {
+      services = await api.services();
+    } catch {
+      services = null;
+    }
   });
 
-  // Refresh reserves + recent activity (e.g. after a successful drip).
+  // Refresh reserves + recent activity + service health (e.g. after a drip).
   async function refreshStats() {
     try {
-      [balance, stats] = await Promise.all([api.balance(), api.stats()]);
+      [balance, stats, services] = await Promise.all([
+        api.balance(),
+        api.stats(),
+        api.services(),
+      ]);
     } catch {
       // best effort
     }
@@ -204,6 +247,39 @@
     {:else}
       <p class="text-zinc-500 dark:text-zinc-400">
         Reserves are currently unavailable.
+      </p>
+    {/if}
+  </div>
+
+  <div
+    class="rounded-lg border border-zinc-200 bg-white p-4 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+  >
+    <div class="mb-3 font-medium">Background services</div>
+    {#if services}
+      <ul class="space-y-3">
+        {#each services.services as s (s.key)}
+          <li class="flex items-start gap-3">
+            <span
+              class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full {dotClass(
+                s.status,
+              )}"
+              aria-hidden="true"
+            ></span>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-medium">{s.name}</span>
+                <span class="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
+                  {statusLabel(s.status)}
+                </span>
+              </div>
+              <p class="text-xs text-zinc-500 dark:text-zinc-400">{s.detail}</p>
+            </div>
+          </li>
+        {/each}
+      </ul>
+    {:else}
+      <p class="text-zinc-500 dark:text-zinc-400">
+        Service status is currently unavailable.
       </p>
     {/if}
   </div>

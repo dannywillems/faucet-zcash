@@ -41,6 +41,25 @@ export interface FaucetBalance {
   orchard_total_zat: number;
 }
 
+export type ServiceState =
+  | 'ok'
+  | 'degraded'
+  | 'down'
+  | 'not_configured'
+  | 'unknown';
+
+export interface ServiceStatus {
+  key: string;
+  name: string;
+  status: ServiceState;
+  detail: string;
+}
+
+export interface FaucetServices {
+  checked_at: number;
+  services: ServiceStatus[];
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -130,6 +149,9 @@ export const api = {
   },
   balance(): Promise<FaucetBalance> {
     return request('/faucet/balance', 'GET');
+  },
+  services(): Promise<FaucetServices> {
+    return request('/faucet/services', 'GET');
   },
   stats(): Promise<FaucetStats> {
     return request('/faucet/stats', 'GET');

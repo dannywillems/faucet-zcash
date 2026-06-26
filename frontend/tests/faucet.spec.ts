@@ -39,3 +39,42 @@ test('rejects an invalid address client-side via wasm', async ({ page }) => {
   await addr.fill('not-a-zcash-address');
   await expect(page.getByText(/not a valid zcash address/i)).toBeVisible();
 });
+
+test('shows the background services status card', async ({ page }) => {
+  await page.route('**/api/faucet/services', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        checked_at: 1_700_000_000,
+        services: [
+          {
+            key: 'worker',
+            name: 'Worker API',
+            status: 'ok',
+            detail: 'Responding',
+          },
+          {
+            key: 'signer',
+            name: 'Signer',
+            status: 'down',
+            detail: 'Unreachable over the tunnel',
+          },
+          {
+            key: 'heartbeat',
+            name: 'Heartbeat cron',
+            status: 'degraded',
+            detail: 'Last self-send 20m ago (txid abcd012345...)',
+          },
+        ],
+      }),
+    }),
+  );
+
+  await page.goto('/');
+  await expect(page.getByText('Background services')).toBeVisible();
+  await expect(page.getByText('Worker API')).toBeVisible();
+  await expect(page.getByText('Operational')).toBeVisible();
+  await expect(page.getByText('Down')).toBeVisible();
+  await expect(page.getByText('Degraded')).toBeVisible();
+});
