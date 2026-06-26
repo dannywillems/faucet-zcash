@@ -58,6 +58,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the full sync/build/prove/broadcast path on a schedule. Deployed on
   Cloudflare by CI (`deploy-worker`); no host process. Tunable via the
   `HEARTBEAT_AMOUNT_ZAT` Worker var; a no-op until `SIGNER_URL` is set.
+- Single-writer wallet-DB lock in the signer (`signer/src/dblock.rs`): an
+  exclusive `flock` on `<db>.lock` taken at startup. A second instance logs the
+  contention and exits non-zero, so an orchestrator restarts it until the holder
+  releases the lock; the lock is released automatically when the process exits.
+  The wallet DB now lives in the repo `data/` directory (gitignored); the signer
+  docker service bind-mounts it (`../data:/data`, `SIGNER_DB_PATH=/data/wallet.db`)
+  and uses `restart: on-failure`.
 - `deploy/faucet-orchard-generator.sh`: host-side Orchard activity generator
   (behind the tunnel) that fires a burst (default 10) of small Orchard
   self-sends per run, intended for a per-minute cron, to keep the Orchard pool
