@@ -52,10 +52,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   restores the signed-in state on load and offers a log-out control.
 - Frontend `/api/*` is proxied to the Worker by a Pages Function (same origin),
   and the Worker restricts OTP recipients to an email-domain allowlist.
-- Deploy: `faucet-heartbeat.sh` chain-liveness cron and a `heartbeat`
-  docker-compose sidecar that has the faucet self-send a tiny Orchard amount
-  every `HEARTBEAT_INTERVAL` seconds (default 5 minutes), exercising the full
-  sync/build/prove/broadcast path on a schedule.
+- Chain-liveness heartbeat as a Cloudflare Worker Cron Trigger
+  (`*/5 * * * *`): the Worker's scheduled handler has the faucet self-send a
+  tiny Orchard amount to its own unified address every 5 minutes, exercising
+  the full sync/build/prove/broadcast path on a schedule. Deployed on
+  Cloudflare by CI (`deploy-worker`); no host process. Tunable via the
+  `HEARTBEAT_AMOUNT_ZAT` Worker var; a no-op until `SIGNER_URL` is set.
 
 ### Changed
 
