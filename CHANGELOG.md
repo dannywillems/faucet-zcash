@@ -83,6 +83,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`heartbeat` table) by the scheduled handler; maintenance liveness is
   inferred from the reserves-snapshot freshness.
 
+### Fixed
+
+- OTP send no longer returns a raw 500, and no longer locks an address out,
+  when email delivery fails. The Worker now sends the email before recording the
+  code, so a provider rejection (e.g. an unverified sender domain) leaves no row
+  to trip the resend throttle, and it returns a clear message ("try again in a
+  couple of minutes, contact the administrator if it persists") instead of a
+  500. The provider error is logged server-side, never surfaced. The resend
+  throttle message is clearer too.
+
 ### Changed
 
 - All crate dependencies are centralized in `[workspace.dependencies]` and
