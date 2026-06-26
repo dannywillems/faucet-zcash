@@ -5,6 +5,9 @@ and the signer on your own host (reached by the Worker over a Cloudflare
 Tunnel). The frontend and Worker share one origin via a `/api/*` route so the
 Basic Auth gate and the session cookie work.
 
+For how the tunnel actually works (the host dials out, no inbound ports) and the
+security model, see [`../docs/INFRASTRUCTURE.md`](../docs/INFRASTRUCTURE.md).
+
 ## 1. D1 database
 
 ```bash

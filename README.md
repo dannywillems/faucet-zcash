@@ -34,6 +34,10 @@ seed-holding signer therefore runs natively on the node host; the Worker stays a
 thin authenticated API that owns D1 and calls the signer over an authenticated
 channel (Cloudflare Tunnel).
 
+See [`docs/INFRASTRUCTURE.md`](docs/INFRASTRUCTURE.md) for how the Worker reaches
+the signer over a Cloudflare Tunnel (the host dials out, so it has no inbound
+ports), the background-job data flow, and the security model of that design.
+
 ## Repository layout
 
 | Path                       | What                                                        |
