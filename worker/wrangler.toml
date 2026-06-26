@@ -6,6 +6,13 @@ compatibility_date = "2025-05-01"
 [build]
 command = "cargo install -q worker-build --version 0.8.5 && worker-build --release"
 
+# Cron Triggers. The heartbeat fires every 5 minutes: the Worker's scheduled
+# handler asks the signer to self-send a tiny Orchard amount, keeping the chain
+# moving and exercising the full sync/build/prove/broadcast path as a liveness
+# probe. No-op until SIGNER_URL (the signer tunnel) is configured.
+[triggers]
+crons = ["*/5 * * * *"]
+
 # D1 database binding (system of record: users, OTP, sessions, drips).
 # database_id is filled in after `wrangler d1 create faucet-zcash`.
 [[d1_databases]]
@@ -25,6 +32,10 @@ FAUCET_NETWORK = "testnet"
 ALLOWED_EMAIL_DOMAINS = "zodl.com"
 # 1 TAZ = 100_000_000 zatoshi.
 DRIP_AMOUNT_ZAT = "100000000"
+# Heartbeat self-send amount in zatoshi (liveness cron, see [triggers]). The
+# amount returns to the faucet minus the ZIP-317 fee, so it is the per-run note
+# size, not the cost. Default 1000 (0.00001 TAZ).
+HEARTBEAT_AMOUNT_ZAT = "1000"
 # Per-request cooldown (keyed on email AND destination address AND IP).
 # 0 disables it (this faucet is used only by a few colleagues). Set a positive
 # value (e.g. 86400 for 24h) to throttle if it is ever opened up.

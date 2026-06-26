@@ -6,7 +6,7 @@
 //! never holds the seed and never builds transactions.
 
 use faucet_core::{
-    DripResponse, FaucetBalanceResponse, Network, SignerSendRequest, SignerSendResponse,
+    DripResponse, FaucetBalanceResponse, Network, Pool, SignerSendRequest, SignerSendResponse,
     validate_destination,
 };
 use serde::Deserialize;
@@ -35,6 +35,64 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .post_async("/api/faucet/drip", handle_drip)
         .run(req, env)
         .await
+}
+
+/// Cron-triggered chain-liveness heartbeat.
+///
+/// The Cloudflare Cron Trigger (see `wrangler.toml` `[triggers]`) invokes this
+/// on a schedule (every 5 minutes). It asks the signer to send a tiny Orchard
+/// amount to the faucet's OWN unified address (a self-send), producing a real
+/// testnet transaction every tick. This exercises the full signer pipeline
+/// (sync -> build -> prove -> broadcast) end to end, so a long-running
+/// deployment continuously proves the whole faucet still works; if the pipeline
+/// rots (sync stalls, prover params missing, zaino unreachable), these runs
+/// fail and surface in `wrangler tail` / the Worker logs.
+///
+/// A self-send keeps the principal: only the ZIP-317 fee leaves the wallet, and
+/// the output returns as a fresh Orchard note the next run can spend.
+#[event(scheduled)]
+async fn scheduled(_event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
+    match run_heartbeat(&env).await {
+        Ok(Some(txid)) => console_log!("heartbeat: broadcast self-send txid={txid}"),
+        Ok(None) => console_log!("heartbeat: signer not configured; skipped"),
+        Err(e) => console_error!("heartbeat failed: {e}"),
+    }
+}
+
+/// Perform one heartbeat self-send. Returns `Ok(Some(txid))` on success, or
+/// `Ok(None)` when the signer tunnel is not configured yet (a no-op, not an
+/// error, so an unconfigured deployment does not log failures every 5 minutes).
+async fn run_heartbeat(env: &Env) -> Result<Option<String>> {
+    let signer_base = env
+        .var("SIGNER_URL")
+        .map(|v| v.to_string())
+        .unwrap_or_default();
+    if signer_base.is_empty() || signer_base.contains("signer.invalid") {
+        return Ok(None);
+    }
+    let secret = env.secret("SIGNER_SHARED_SECRET")?.to_string();
+
+    // 1. Learn the faucet's own unified address (the self-send destination).
+    let balance = signer_balance(&signer_base, &secret).await?;
+
+    // 2. Self-send a tiny Orchard amount with a timestamped memo so the on-chain
+    //    trail is easy to follow when auditing liveness after the fact.
+    let amount_zat: u64 = env
+        .var("HEARTBEAT_AMOUNT_ZAT")
+        .ok()
+        .and_then(|v| v.to_string().parse::<u64>().ok())
+        .unwrap_or(1000);
+    let memo = Some(format!("faucet-heartbeat {}", now_secs()));
+    let txid = call_signer(
+        &signer_base,
+        &secret,
+        &balance.unified_address,
+        amount_zat,
+        Pool::Orchard,
+        memo,
+    )
+    .await?;
+    Ok(Some(txid))
 }
 
 // ---------------------------------------------------------------------------
@@ -345,7 +403,17 @@ async fn handle_drip(mut req: Request, ctx: RouteContext<()>) -> Result<Response
              above is live; once the tunnel is configured, drips will work.",
         );
     }
-    let txid = match call_signer(&ctx, &address, amount_zat, valid.pool, memo).await {
+    let signer_secret = secret(&ctx, "SIGNER_SHARED_SECRET")?;
+    let txid = match call_signer(
+        &signer_base,
+        &signer_secret,
+        &address,
+        amount_zat,
+        valid.pool,
+        memo,
+    )
+    .await
+    {
         Ok(t) => t,
         Err(_) => {
             return error_json(
@@ -497,14 +565,14 @@ async fn handle_ingest_balance(mut req: Request, ctx: RouteContext<()>) -> Resul
 }
 
 async fn call_signer(
-    ctx: &RouteContext<()>,
+    signer_base: &str,
+    secret: &str,
     address: &str,
     amount_zat: u64,
     pool: faucet_core::Pool,
     memo: Option<String>,
 ) -> Result<String> {
-    let url = format!("{}/send", var_str(ctx, "SIGNER_URL", ""));
-    let secret = secret(ctx, "SIGNER_SHARED_SECRET")?;
+    let url = format!("{signer_base}/send");
     let payload = SignerSendRequest {
         address: address.to_string(),
         amount_zat,
@@ -531,6 +599,27 @@ async fn call_signer(
     }
     let parsed: SignerSendResponse = resp.json().await?;
     Ok(parsed.txid)
+}
+
+/// Fetch the faucet's own balance (and unified address) from the signer,
+/// forcing a sync first. Used by the heartbeat to learn the faucet's own
+/// destination address before self-sending.
+async fn signer_balance(signer_base: &str, secret: &str) -> Result<FaucetBalanceResponse> {
+    let url = format!("{signer_base}/balance?sync=1");
+    let headers = Headers::new();
+    headers.set("Authorization", &format!("Bearer {secret}"))?;
+    let mut init = RequestInit::new();
+    init.with_method(Method::Get).with_headers(headers);
+    let request = Request::new_with_init(&url, &init)?;
+
+    let mut resp = Fetch::Request(request).send().await?;
+    if resp.status_code() != 200 {
+        return Err(Error::RustError(format!(
+            "signer /balance returned status {}",
+            resp.status_code()
+        )));
+    }
+    resp.json().await
 }
 
 // ---------------------------------------------------------------------------
