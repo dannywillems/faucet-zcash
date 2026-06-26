@@ -101,6 +101,44 @@ a timer:
 the push bypasses the Basic Auth gate (it authenticates with the signer
 secret).
 
+## 7. Heartbeat cron (chain liveness)
+
+`faucet-heartbeat.sh` makes the faucet send a tiny Orchard amount to its **own**
+unified address every few minutes. This is a liveness probe: each run produces a
+real testnet transaction and exercises the full `sync -> build -> prove ->
+broadcast` path, so if the pipeline ever rots (sync stalls, prover params
+missing, zaino unreachable), the runs fail loudly in the log. It is a self-send,
+so only the ZIP-317 fee leaves the wallet; the output returns as a fresh Orchard
+note the next run can spend.
+
+The heartbeat runs automatically as a `heartbeat` sidecar in
+`docker-compose.yml`, so `docker compose up -d` (or `make stack-up`) starts it
+alongside the signer. It reaches the signer over the internal Docker network
+(never a host port). Tune it in `.env`:
+
+```bash
+HEARTBEAT_INTERVAL=300      # seconds between transactions (default 5 minutes)
+HEARTBEAT_AMOUNT_ZAT=1000   # self-send note size in zatoshis (default 0.00001 TAZ)
+```
+
+To check it is alive:
+
+```bash
+docker compose logs -f heartbeat
+# heartbeat: broadcast 1000 zat self-send to utest1... txid=...
+```
+
+Alternatively, run it from a host crontab instead of the sidecar (omit the
+service or set a long interval), every 5 minutes:
+
+```bash
+*/5 * * * * SIGNER_SHARED_SECRET=... \
+  /opt/faucet/deploy/faucet-heartbeat.sh >> /var/log/faucet-heartbeat.log 2>&1
+```
+
+The heartbeat needs spendable Orchard notes, so it only works after the faucet
+is funded and the maintenance shield (step 6) has run at least once.
+
 ## Status
 
 The signer wallet engine is implemented end-to-end against the lightwalletd
