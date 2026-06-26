@@ -13,19 +13,27 @@ services:
       context: ..
       dockerfile: signer/Dockerfile
     image: faucet-signer:latest
-    restart: unless-stopped
+    # on-failure (not unless-stopped): the signer takes an exclusive lock on the
+    # wallet DB, so a second instance exits non-zero and is restarted, retrying
+    # until the holder releases the lock. Plain compose retries with backoff; cap
+    # attempts via deploy.restart_policy under an orchestrator if needed.
+    restart: on-failure
     environment:
       SIGNER_BIND: 0.0.0.0:8080
       SIGNER_SHARED_SECRET: ${SIGNER_SHARED_SECRET:?set SIGNER_SHARED_SECRET in .env}
       SIGNER_SEED: ${SIGNER_SEED:?set SIGNER_SEED in .env}
       LIGHTWALLETD_URL: ${LIGHTWALLETD_URL:-http://host.docker.internal:8137}
-      SIGNER_DB_PATH: ${SIGNER_DB_PATH:-/data/faucet-wallet.db}
+      # The wallet DB lives in the repo's data/ dir, bind-mounted below.
+      SIGNER_DB_PATH: /data/wallet.db
       FAUCET_NETWORK: testnet
       RUST_LOG: info
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - faucet-data:/data
+      # Bind-mount the repo's data/ directory (not a named volume) so the wallet
+      # DB lives in the repository. A directory mount keeps SQLite's -wal/-shm
+      # siblings and the .lock file together on the host.
+      - ../data:/data
     expose:
       - "8080"
     networks:
@@ -41,9 +49,6 @@ services:
       - signer
     networks:
       - faucet
-
-volumes:
-  faucet-data:
 
 networks:
   faucet:

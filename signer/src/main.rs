@@ -29,6 +29,25 @@ async fn main() {
         }
     };
 
+    // Single-writer guard: hold an exclusive lock on the wallet DB so only one
+    // signer ever touches it. If another process holds it, exit non-zero so the
+    // orchestrator restarts us until the holder releases it. The lock is held
+    // for the whole process lifetime and released on exit (see `dblock`).
+    let _wallet_lock = match faucet_signer::dblock::acquire(&config.db_path) {
+        Ok(lock) => {
+            tracing::info!("acquired wallet lock ({})", lock.path());
+            lock
+        }
+        Err(faucet_signer::dblock::LockError::Held(path)) => {
+            tracing::error!("another signer holds the wallet lock ({path}); exiting to retry");
+            std::process::exit(1);
+        }
+        Err(e) => {
+            tracing::error!("{e}");
+            std::process::exit(1);
+        }
+    };
+
     let bind = config.bind.clone();
     let state = Arc::new(AppState::new(
         Wallet::new(

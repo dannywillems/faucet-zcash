@@ -72,6 +72,9 @@ zeroize = "1.9.0"
 # Storage
 rusqlite = "0.37"
 
+# System: advisory file locking for the single-writer wallet DB lock (flock).
+libc = "0.2"
+
 # RNG
 rand = "0.8"
 

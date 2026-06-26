@@ -46,3 +46,6 @@ Thumbs.db
 *.log
 *.tmp
 *.bak
+
+# Signer wallet database (local state, never commit)
+/data/

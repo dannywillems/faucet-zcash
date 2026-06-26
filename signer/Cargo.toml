@@ -18,6 +18,7 @@ axum = { workspace = true }
 bip0039 = { workspace = true }
 faucet-core = { workspace = true }
 hex = { workspace = true }
+libc = { workspace = true }
 rand = { workspace = true }
 rusqlite = { workspace = true }
 secrecy = { workspace = true }

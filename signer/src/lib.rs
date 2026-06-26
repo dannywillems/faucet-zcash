@@ -3,6 +3,7 @@
 
 pub mod blockcache;
 pub mod config;
+pub mod dblock;
 pub mod error;
 pub mod wallet;
 

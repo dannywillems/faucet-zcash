@@ -82,8 +82,24 @@ docker compose up -d
 The `cloudflared` service connects out to Cloudflare; configure the tunnel in
 the Zero Trust dashboard to route your signer hostname to `http://signer:8080`.
 The signer is never published on a host port. The containerized signer reaches
-zaino on the host via `host.docker.internal`; the wallet DB persists on the
-`faucet-data` volume.
+zaino on the host via `host.docker.internal`.
+
+### Wallet database and the single-writer lock
+
+The wallet database lives in the repository at `data/wallet.db` (gitignored,
+never committed). The signer docker service bind-mounts the repo `data/`
+directory to `/data` and uses `SIGNER_DB_PATH=/data/wallet.db`, so the DB file
+stays on the host inside the repo (a directory mount keeps SQLite's `-wal` /
+`-shm` siblings and the `.lock` file together). Set `SIGNER_DB_PATH` to one
+absolute path everywhere so every launch shares the same database.
+
+At most one signer may use the database at a time (concurrent SQLite writers
+corrupt it). On startup the signer takes an exclusive `flock` on
+`data/wallet.db.lock`; if another instance already holds it, the signer logs the
+contention and exits non-zero. The docker service therefore uses
+`restart: on-failure`, so a second container keeps restarting until the holder
+releases the lock. The lock is released automatically when the holding process
+exits (cleanly or on crash), so no stale lock is left behind.
 
 ## 6. Maintenance cron (auto-shield + balance)
 
