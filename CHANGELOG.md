@@ -58,6 +58,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the full sync/build/prove/broadcast path on a schedule. Deployed on
   Cloudflare by CI (`deploy-worker`); no host process. Tunable via the
   `HEARTBEAT_AMOUNT_ZAT` Worker var; a no-op until `SIGNER_URL` is set.
+- `docs/INFRASTRUCTURE.md`: how the Worker reaches the host-run signer over a
+  Cloudflare Tunnel (outbound-only, no inbound ports), the background-job data
+  flow, and the security model; cross-linked from the READMEs.
 - Background-services status card on the frontend, backed by a new
   `GET /api/faucet/services` endpoint: reports the Worker API, heartbeat job
   (both on Cloudflare), and the signer service, Zcash node (zebra + zaino), and
