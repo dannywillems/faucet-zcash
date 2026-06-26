@@ -31,30 +31,6 @@ services:
     networks:
       - faucet
 
-  # Liveness heartbeat: every HEARTBEAT_INTERVAL seconds, ask the signer to send
-  # a tiny Orchard self-send so the chain keeps moving and the full
-  # sync -> build -> prove -> broadcast path is exercised on a schedule. Reaches
-  # the signer over the internal network (never the host); only the ZIP-317 fee
-  # is spent, the principal returns to the faucet as a fresh note.
-  heartbeat:
-    image: curlimages/curl:8.11.1
-    restart: unless-stopped
-    environment:
-      SIGNER_LOCAL_URL: http://signer:8080
-      SIGNER_SHARED_SECRET: ${SIGNER_SHARED_SECRET:?set SIGNER_SHARED_SECRET in .env}
-      HEARTBEAT_INTERVAL: ${HEARTBEAT_INTERVAL:-300}
-      HEARTBEAT_AMOUNT_ZAT: ${HEARTBEAT_AMOUNT_ZAT:-1000}
-    entrypoint:
-      - /bin/sh
-      - -c
-      - 'while true; do /heartbeat.sh || true; sleep "$${HEARTBEAT_INTERVAL:-300}"; done'
-    volumes:
-      - ./faucet-heartbeat.sh:/heartbeat.sh:ro
-    depends_on:
-      - signer
-    networks:
-      - faucet
-
   cloudflared:
     image: cloudflare/cloudflared:2024.12.2
     restart: unless-stopped

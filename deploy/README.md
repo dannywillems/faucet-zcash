@@ -101,43 +101,34 @@ a timer:
 the push bypasses the Basic Auth gate (it authenticates with the signer
 secret).
 
-## 7. Heartbeat cron (chain liveness)
+## 7. Heartbeat cron (chain liveness, on Cloudflare)
 
-`faucet-heartbeat.sh` makes the faucet send a tiny Orchard amount to its **own**
-unified address every few minutes. This is a liveness probe: each run produces a
-real testnet transaction and exercises the full `sync -> build -> prove ->
-broadcast` path, so if the pipeline ever rots (sync stalls, prover params
-missing, zaino unreachable), the runs fail loudly in the log. It is a self-send,
-so only the ZIP-317 fee leaves the wallet; the output returns as a fresh Orchard
-note the next run can spend.
+The Worker carries a **Cloudflare Cron Trigger** (`wrangler.toml` `[triggers]`,
+`*/5 * * * *`). Every 5 minutes its scheduled handler asks the signer to send a
+tiny Orchard amount to the faucet's **own** unified address (a self-send),
+producing a real testnet transaction each tick. This exercises the full
+`sync -> build -> prove -> broadcast` path as a liveness probe: if the pipeline
+rots (sync stalls, prover params missing, zaino unreachable), the runs fail and
+surface in the Worker logs. A self-send keeps the principal; only the ZIP-317
+fee leaves the wallet, and the output returns as a fresh Orchard note the next
+run can spend.
 
-The heartbeat runs automatically as a `heartbeat` sidecar in
-`docker-compose.yml`, so `docker compose up -d` (or `make stack-up`) starts it
-alongside the signer. It reaches the signer over the internal Docker network
-(never a host port). Tune it in `.env`:
+This needs no host process: it runs on Cloudflare and ships with the Worker, so
+`make deploy-worker` (run by CI on push to `main`) deploys the cron alongside the
+API. It is a no-op until `SIGNER_URL` (the signer tunnel) is configured. Tune
+the per-run amount with the `HEARTBEAT_AMOUNT_ZAT` var in `wrangler.toml`
+(default 1000 zat).
 
-```bash
-HEARTBEAT_INTERVAL=300      # seconds between transactions (default 5 minutes)
-HEARTBEAT_AMOUNT_ZAT=1000   # self-send note size in zatoshis (default 0.00001 TAZ)
-```
-
-To check it is alive:
+Watch it run:
 
 ```bash
-docker compose logs -f heartbeat
-# heartbeat: broadcast 1000 zat self-send to utest1... txid=...
+cd worker && npx wrangler tail
+# heartbeat: broadcast self-send txid=...
 ```
 
-Alternatively, run it from a host crontab instead of the sidecar (omit the
-service or set a long interval), every 5 minutes:
-
-```bash
-*/5 * * * * SIGNER_SHARED_SECRET=... \
-  /opt/faucet/deploy/faucet-heartbeat.sh >> /var/log/faucet-heartbeat.log 2>&1
-```
-
-The heartbeat needs spendable Orchard notes, so it only works after the faucet
-is funded and the maintenance shield (step 6) has run at least once.
+The heartbeat spends Orchard notes, so it only succeeds after the faucet is
+funded and the maintenance shield (step 6) has run at least once; before that it
+logs a failure each tick (harmless).
 
 ## Status
 
