@@ -31,6 +31,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get_async("/api/faucet/status", handle_status)
         .get_async("/api/faucet/stats", handle_stats)
         .get_async("/api/faucet/balance", handle_faucet_balance)
+        .get_async("/api/faucet/services", handle_services)
         .post_async("/api/internal/balance", handle_ingest_balance)
         .post_async("/api/faucet/drip", handle_drip)
         .run(req, env)
@@ -53,10 +54,66 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 #[event(scheduled)]
 async fn scheduled(_event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
     match run_heartbeat(&env).await {
-        Ok(Some(txid)) => console_log!("heartbeat: broadcast self-send txid={txid}"),
+        Ok(Some(txid)) => {
+            console_log!("heartbeat: broadcast self-send txid={txid}");
+            record_heartbeat(&env, "ok", Some(&txid), None).await;
+        }
         Ok(None) => console_log!("heartbeat: signer not configured; skipped"),
-        Err(e) => console_error!("heartbeat failed: {e}"),
+        Err(e) => {
+            let msg = e.to_string();
+            console_error!("heartbeat failed: {msg}");
+            record_heartbeat(&env, "error", None, Some(&msg)).await;
+        }
     }
+}
+
+/// Upsert the heartbeat result row (id = 1) read by the services status card.
+/// Best-effort: a logging/D1 failure here must not turn a successful self-send
+/// into a reported failure, so errors are logged and swallowed.
+async fn record_heartbeat(env: &Env, status: &str, txid: Option<&str>, err: Option<&str>) {
+    if let Err(e) = record_heartbeat_inner(env, status, txid, err).await {
+        console_error!("heartbeat: failed to record status: {e}");
+    }
+}
+
+async fn record_heartbeat_inner(
+    env: &Env,
+    status: &str,
+    txid: Option<&str>,
+    err: Option<&str>,
+) -> Result<()> {
+    let db = env.d1("DB")?;
+    ensure_heartbeat_table(&db).await?;
+    db.prepare(
+        "INSERT INTO heartbeat (id, last_status, last_txid, last_error, last_run_at) \
+         VALUES (1, ?1, ?2, ?3, ?4) \
+         ON CONFLICT(id) DO UPDATE SET last_status = ?1, last_txid = ?2, \
+         last_error = ?3, last_run_at = ?4",
+    )
+    .bind(&[
+        js(status),
+        txid.map(js).unwrap_or(JsValue::NULL),
+        err.map(js).unwrap_or(JsValue::NULL),
+        jsi(now_secs()),
+    ])?
+    .run()
+    .await?;
+    Ok(())
+}
+
+/// Create the heartbeat table if it does not exist. The schema is also tracked
+/// as a migration (`0003_heartbeat.sql`); this lazy create lets the feature work
+/// on a deploy where migrations have not been applied yet.
+async fn ensure_heartbeat_table(db: &D1Database) -> Result<()> {
+    db.prepare(
+        "CREATE TABLE IF NOT EXISTS heartbeat ( \
+         id INTEGER PRIMARY KEY CHECK (id = 1), \
+         last_status TEXT NOT NULL, last_txid TEXT, last_error TEXT, \
+         last_run_at INTEGER NOT NULL)",
+    )
+    .run()
+    .await?;
+    Ok(())
 }
 
 /// Perform one heartbeat self-send. Returns `Ok(Some(txid))` on success, or
@@ -153,6 +210,14 @@ struct DripHistRow {
     amount_zat: i64,
     txid: String,
     created_at: i64,
+}
+
+#[derive(Deserialize)]
+struct HeartbeatRow {
+    last_status: String,
+    last_txid: Option<String>,
+    last_error: Option<String>,
+    last_run_at: i64,
 }
 
 #[derive(Deserialize)]
@@ -528,6 +593,175 @@ async fn handle_faucet_balance(req: Request, ctx: RouteContext<()>) -> Result<Re
     }
 }
 
+/// Status of the background services behind the faucet, for the frontend status
+/// card. Behind the Basic Auth gate (no session needed). Each entry has a
+/// coarse `status` (`ok` | `degraded` | `down` | `not_configured` | `unknown`)
+/// and a human `detail`. The signer/node states are probed live over the
+/// tunnel; the heartbeat state is read from D1.
+async fn handle_services(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    if let Some(resp) = require_basic_auth(&req, &ctx)? {
+        return Ok(resp);
+    }
+    let now = now_secs();
+    let mut services: Vec<serde_json::Value> = Vec::new();
+
+    // 1. Worker API: if this handler runs, the Worker is up.
+    services.push(service("worker", "Worker API", "ok", "Responding"));
+
+    // 2. Signer + 3. node (zebra + zaino), probed together via signer /info.
+    let signer_base = var_str(&ctx, "SIGNER_URL", "");
+    if signer_base.is_empty() || signer_base.contains("signer.invalid") {
+        services.push(service(
+            "signer",
+            "Signer",
+            "not_configured",
+            "SIGNER_URL not set (tunnel not configured)",
+        ));
+        services.push(service(
+            "node",
+            "Zcash node (zebra + zaino)",
+            "unknown",
+            "Reached through the signer; unavailable until the signer is configured",
+        ));
+    } else {
+        let secret = secret(&ctx, "SIGNER_SHARED_SECRET")?;
+        match signer_info(&signer_base, &secret).await {
+            Ok(info) => {
+                services.push(service(
+                    "signer",
+                    "Signer",
+                    "ok",
+                    "Reachable; building and broadcasting transactions",
+                ));
+                // The node is reachable (the signer read a chain tip from it).
+                // Use the cached balance snapshot to report scan progress.
+                services.push(node_service(&ctx, info.chain_height).await);
+            }
+            Err(_) => {
+                services.push(service(
+                    "signer",
+                    "Signer",
+                    "down",
+                    "Unreachable over the tunnel (offline or still starting)",
+                ));
+                services.push(service(
+                    "node",
+                    "Zcash node (zebra + zaino)",
+                    "unknown",
+                    "Reached through the signer, which is currently unreachable",
+                ));
+            }
+        }
+    }
+
+    // 4. Heartbeat cron (read the last recorded result from D1).
+    services.push(heartbeat_service(&ctx, now).await);
+
+    Response::from_json(&serde_json::json!({
+        "checked_at": now,
+        "services": services,
+    }))
+}
+
+/// Build one service entry.
+fn service(key: &str, name: &str, status: &str, detail: &str) -> serde_json::Value {
+    serde_json::json!({ "key": key, "name": name, "status": status, "detail": detail })
+}
+
+/// Node status derived from the live chain tip and the cached scan position.
+async fn node_service(ctx: &RouteContext<()>, chain_height: u32) -> serde_json::Value {
+    let name = "Zcash node (zebra + zaino)";
+    let db = match ctx.env.d1("DB") {
+        Ok(db) => db,
+        Err(_) => return service("node", name, "ok", &format!("Chain tip {chain_height}")),
+    };
+    let row: Option<BalanceRow> = db
+        .prepare("SELECT * FROM faucet_balance WHERE id = 1")
+        .first(None)
+        .await
+        .ok()
+        .flatten();
+    match row {
+        // More than 100 blocks behind the tip => still catching up.
+        Some(r) if i64::from(chain_height) - r.fully_scanned > 100 => service(
+            "node",
+            name,
+            "degraded",
+            &format!("Syncing: scanned {} of tip {chain_height}", r.fully_scanned),
+        ),
+        Some(r) => service(
+            "node",
+            name,
+            "ok",
+            &format!("Synced: scanned {} of tip {chain_height}", r.fully_scanned),
+        ),
+        None => service("node", name, "ok", &format!("Chain tip {chain_height}")),
+    }
+}
+
+/// Heartbeat status from its last recorded run. Considered stale if the last run
+/// is older than three cron intervals (15 minutes).
+async fn heartbeat_service(ctx: &RouteContext<()>, now: i64) -> serde_json::Value {
+    let name = "Heartbeat cron";
+    let Ok(db) = ctx.env.d1("DB") else {
+        return service("heartbeat", name, "unknown", "Status unavailable");
+    };
+    if ensure_heartbeat_table(&db).await.is_err() {
+        return service("heartbeat", name, "unknown", "Status unavailable");
+    }
+    let row: Option<HeartbeatRow> = db
+        .prepare("SELECT * FROM heartbeat WHERE id = 1")
+        .first(None)
+        .await
+        .ok()
+        .flatten();
+    let Some(r) = row else {
+        return service("heartbeat", name, "unknown", "No run recorded yet");
+    };
+    let age = now - r.last_run_at;
+    let ago = human_ago(age);
+    if r.last_status == "error" {
+        let msg = r.last_error.as_deref().unwrap_or("unknown error");
+        return service(
+            "heartbeat",
+            name,
+            "down",
+            &format!("Last run {ago} failed: {msg}"),
+        );
+    }
+    let txid = r.last_txid.as_deref().unwrap_or("");
+    let detail = format!("Last self-send {ago} (txid {})", short_txid(txid));
+    // Stale if no successful run within three intervals.
+    let status = if age > 900 { "degraded" } else { "ok" };
+    service("heartbeat", name, status, &detail)
+}
+
+/// Compact "N units ago" rendering for a duration in seconds.
+fn human_ago(secs: i64) -> String {
+    if secs < 0 {
+        return "just now".to_string();
+    }
+    if secs < 60 {
+        return format!("{secs}s ago");
+    }
+    if secs < 3600 {
+        return format!("{}m ago", secs / 60);
+    }
+    if secs < 86_400 {
+        return format!("{}h ago", secs / 3600);
+    }
+    format!("{}d ago", secs / 86_400)
+}
+
+/// First 10 chars of a txid for compact display.
+fn short_txid(txid: &str) -> String {
+    if txid.len() <= 10 {
+        txid.to_string()
+    } else {
+        format!("{}...", &txid[..10])
+    }
+}
+
 /// Internal: the signer host pushes a balance snapshot here (authenticated with
 /// the signer shared secret, not a session). Call the Worker origin directly,
 /// not the Pages proxy, so the Basic Auth gate does not apply.
@@ -599,6 +833,33 @@ async fn call_signer(
     }
     let parsed: SignerSendResponse = resp.json().await?;
     Ok(parsed.txid)
+}
+
+/// Diagnostics from the signer `/info`: confirms the signer is reachable and
+/// reports the chain tip it sees from zaino (proving the node is live too).
+#[derive(Deserialize)]
+struct SignerInfo {
+    chain_height: u32,
+}
+
+/// Probe the signer `/info` endpoint. A success proves both the signer and the
+/// node (zebra + zaino) behind it are reachable. Used by the services card.
+async fn signer_info(signer_base: &str, secret: &str) -> Result<SignerInfo> {
+    let url = format!("{signer_base}/info");
+    let headers = Headers::new();
+    headers.set("Authorization", &format!("Bearer {secret}"))?;
+    let mut init = RequestInit::new();
+    init.with_method(Method::Get).with_headers(headers);
+    let request = Request::new_with_init(&url, &init)?;
+
+    let mut resp = Fetch::Request(request).send().await?;
+    if resp.status_code() != 200 {
+        return Err(Error::RustError(format!(
+            "signer /info returned status {}",
+            resp.status_code()
+        )));
+    }
+    resp.json().await
 }
 
 /// Fetch the faucet's own balance (and unified address) from the signer,
