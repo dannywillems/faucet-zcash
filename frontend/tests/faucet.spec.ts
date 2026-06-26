@@ -53,18 +53,25 @@ test('shows the background services status card', async ({ page }) => {
             name: 'Worker API',
             status: 'ok',
             detail: 'Responding',
+            description: 'The faucet HTTP API, a Rust Cloudflare Worker.',
+            code_path: 'worker/src/lib.rs',
+            endpoints: ['GET /api/health', 'POST /api/faucet/drip'],
           },
           {
             key: 'signer',
-            name: 'Signer',
+            name: 'Signer service',
             status: 'down',
             detail: 'Unreachable over the tunnel',
+            description: 'Native Rust process on the faucet host.',
+            code_path: 'signer/src/wallet.rs',
           },
           {
             key: 'heartbeat',
-            name: 'Heartbeat cron',
+            name: 'Heartbeat job',
             status: 'degraded',
             detail: 'Last self-send 20m ago (txid abcd012345...)',
+            description: 'A Cloudflare Worker Cron Trigger (every 5 minutes).',
+            code_path: 'worker/src/lib.rs',
           },
         ],
       }),
@@ -77,4 +84,8 @@ test('shows the background services status card', async ({ page }) => {
   await expect(page.getByText('Operational')).toBeVisible();
   await expect(page.getByText('Down')).toBeVisible();
   await expect(page.getByText('Degraded')).toBeVisible();
+  // The Worker API lists its actual endpoints.
+  await expect(page.getByText('POST /api/faucet/drip')).toBeVisible();
+  // Each service links to its source.
+  await expect(page.getByRole('link', { name: 'code' }).first()).toBeVisible();
 });

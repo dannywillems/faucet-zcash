@@ -31,6 +31,11 @@
     }
   }
 
+  // GitHub link to a service's source from its repo-relative path.
+  function codeUrl(path: string): string {
+    return `${__REPO_URL__}/blob/main/${path}`;
+  }
+
   // Short human label for a service state.
   function statusLabel(status: ServiceState): string {
     switch (status) {
@@ -256,7 +261,7 @@
   >
     <div class="mb-3 font-medium">Background services</div>
     {#if services}
-      <ul class="space-y-3">
+      <ul class="space-y-4">
         {#each services.services as s (s.key)}
           <li class="flex items-start gap-3">
             <span
@@ -265,14 +270,43 @@
               )}"
               aria-hidden="true"
             ></span>
-            <div class="min-w-0 flex-1">
+            <div class="min-w-0 flex-1 space-y-1">
               <div class="flex items-center justify-between gap-2">
                 <span class="font-medium">{s.name}</span>
                 <span class="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
                   {statusLabel(s.status)}
                 </span>
               </div>
-              <p class="text-xs text-zinc-500 dark:text-zinc-400">{s.detail}</p>
+              {#if s.description}
+                <p class="text-xs text-zinc-600 dark:text-zinc-400">
+                  {s.description}
+                </p>
+              {/if}
+              {#if s.endpoints && s.endpoints.length > 0}
+                <ul class="flex flex-wrap gap-1">
+                  {#each s.endpoints as e (e)}
+                    <li
+                      class="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+                    >
+                      {e}
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+              <div class="flex items-center gap-2 text-xs">
+                <span class="text-zinc-500 dark:text-zinc-400">{s.detail}</span>
+                {#if s.code_path}
+                  <span class="text-zinc-400 dark:text-zinc-600">|</span>
+                  <a
+                    href={codeUrl(s.code_path)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-amber-700 hover:underline dark:text-amber-400"
+                  >
+                    code
+                  </a>
+                {/if}
+              </div>
             </div>
           </li>
         {/each}
