@@ -52,6 +52,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   restores the signed-in state on load and offers a log-out control.
 - Frontend `/api/*` is proxied to the Worker by a Pages Function (same origin),
   and the Worker restricts OTP recipients to an email-domain allowlist.
+- Deploy: `faucet-heartbeat.sh` chain-liveness cron and a `heartbeat`
+  docker-compose sidecar that has the faucet self-send a tiny Orchard amount
+  every `HEARTBEAT_INTERVAL` seconds (default 5 minutes), exercising the full
+  sync/build/prove/broadcast path on a schedule.
 
 ### Changed
 
