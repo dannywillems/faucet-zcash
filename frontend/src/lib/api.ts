@@ -53,6 +53,12 @@ export interface ServiceStatus {
   name: string;
   status: ServiceState;
   detail: string;
+  // What the service is (role), independent of its live status.
+  description?: string;
+  // Repo-root-relative path to the source, turned into a link by the frontend.
+  code_path?: string;
+  // HTTP routes (Worker API only).
+  endpoints?: string[];
 }
 
 export interface FaucetServices {

@@ -593,11 +593,53 @@ async fn handle_faucet_balance(req: Request, ctx: RouteContext<()>) -> Result<Re
     }
 }
 
+// What each background service is, for the status card. These are descriptions
+// of the role, not the live state (which is the per-entry `detail`). The hosting
+// split is deliberate: the Worker API and the heartbeat run on Cloudflare; the
+// signer, the Zcash node, and the maintenance cron run on the faucet host
+// (Orchard halo2 proving and a full node cannot run inside a Worker) and are
+// reached over a Cloudflare Tunnel.
+const DESC_WORKER: &str = "The faucet's HTTP API: a Rust Cloudflare Worker \
+    backed by D1 (Cloudflare's SQLite). It runs the Basic Auth bot gate, email \
+    OTP and sessions, the drip endpoint, the reserves/stats endpoints, and the \
+    heartbeat cron, and calls the signer to build transactions. It never holds \
+    the seed.";
+const DESC_HEARTBEAT: &str = "A Cloudflare Worker Cron Trigger (every 5 \
+    minutes). It asks the signer to self-send a tiny Orchard amount, keeping \
+    the chain moving and continuously proving the build/prove/broadcast path \
+    works.";
+const DESC_SIGNER: &str = "An always-on native Rust (axum) process on the \
+    faucet host. It holds the seed, stays synced to the chain, and builds, \
+    proves, and broadcasts transparent and Orchard transactions. The Worker \
+    reaches it over a Cloudflare Tunnel.";
+const DESC_NODE: &str = "A zebrad full node plus zaino (the lightwalletd gRPC \
+    server) on the faucet host. The signer syncs and broadcasts through it.";
+const DESC_MAINTENANCE: &str = "A cron on the faucet host (every 10 minutes). \
+    It shields matured coinbase into the Orchard pool so it becomes spendable, \
+    and refreshes the reserves shown above.";
+
+/// The Worker's HTTP routes, surfaced by the status card. Keep in sync with the
+/// router in `fetch`.
+const WORKER_ENDPOINTS: [&str; 10] = [
+    "GET /api/health",
+    "POST /api/auth/send-otp",
+    "POST /api/auth/verify-otp",
+    "POST /api/auth/logout",
+    "GET /api/faucet/status",
+    "GET /api/faucet/stats",
+    "GET /api/faucet/balance",
+    "GET /api/faucet/services",
+    "POST /api/faucet/drip",
+    "POST /api/internal/balance",
+];
+
 /// Status of the background services behind the faucet, for the frontend status
-/// card. Behind the Basic Auth gate (no session needed). Each entry has a
-/// coarse `status` (`ok` | `degraded` | `down` | `not_configured` | `unknown`)
-/// and a human `detail`. The signer/node states are probed live over the
-/// tunnel; the heartbeat state is read from D1.
+/// card. Behind the Basic Auth gate (no session needed). Each entry carries a
+/// coarse `status` (`ok` | `degraded` | `down` | `not_configured` | `unknown`),
+/// a live `detail`, a `description` of what it is, and a `code_path` (repo-root
+/// relative) the frontend links to. The Worker entry also lists its endpoints.
+/// The signer/node states are probed live over the tunnel; the heartbeat and
+/// maintenance states are inferred from D1.
 async fn handle_services(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     if let Some(resp) = require_basic_auth(&req, &ctx)? {
         return Ok(resp);
@@ -605,57 +647,82 @@ async fn handle_services(req: Request, ctx: RouteContext<()>) -> Result<Response
     let now = now_secs();
     let mut services: Vec<serde_json::Value> = Vec::new();
 
-    // 1. Worker API: if this handler runs, the Worker is up.
-    services.push(service("worker", "Worker API", "ok", "Responding"));
+    // --- On Cloudflare ---
 
-    // 2. Signer + 3. node (zebra + zaino), probed together via signer /info.
+    // 1. Worker API: if this handler runs, the Worker is up. List its routes.
+    let mut worker = svc(
+        "worker",
+        "Worker API",
+        "ok",
+        "Responding",
+        DESC_WORKER,
+        "worker/src/lib.rs",
+    );
+    worker["endpoints"] = serde_json::Value::from(WORKER_ENDPOINTS.as_slice());
+    services.push(worker);
+
+    // 2. Heartbeat job (Cloudflare cron): last recorded result from D1.
+    services.push(heartbeat_service(&ctx, now).await);
+
+    // --- On the faucet host, reached over the Cloudflare Tunnel ---
+
+    // 3. Signer + 4. node (zebra + zaino), probed together via signer /info.
     let signer_base = var_str(&ctx, "SIGNER_URL", "");
     if signer_base.is_empty() || signer_base.contains("signer.invalid") {
-        services.push(service(
+        services.push(svc(
             "signer",
-            "Signer",
+            "Signer service",
             "not_configured",
             "SIGNER_URL not set (tunnel not configured)",
+            DESC_SIGNER,
+            "signer/src/wallet.rs",
         ));
-        services.push(service(
+        services.push(svc(
             "node",
             "Zcash node (zebra + zaino)",
             "unknown",
-            "Reached through the signer; unavailable until the signer is configured",
+            "Reached through the signer; unavailable until it is configured",
+            DESC_NODE,
+            "deploy/README.md",
         ));
     } else {
         let secret = secret(&ctx, "SIGNER_SHARED_SECRET")?;
         match signer_info(&signer_base, &secret).await {
             Ok(info) => {
-                services.push(service(
+                services.push(svc(
                     "signer",
-                    "Signer",
+                    "Signer service",
                     "ok",
                     "Reachable; building and broadcasting transactions",
+                    DESC_SIGNER,
+                    "signer/src/wallet.rs",
                 ));
                 // The node is reachable (the signer read a chain tip from it).
-                // Use the cached balance snapshot to report scan progress.
                 services.push(node_service(&ctx, info.chain_height).await);
             }
             Err(_) => {
-                services.push(service(
+                services.push(svc(
                     "signer",
-                    "Signer",
+                    "Signer service",
                     "down",
                     "Unreachable over the tunnel (offline or still starting)",
+                    DESC_SIGNER,
+                    "signer/src/wallet.rs",
                 ));
-                services.push(service(
+                services.push(svc(
                     "node",
                     "Zcash node (zebra + zaino)",
                     "unknown",
                     "Reached through the signer, which is currently unreachable",
+                    DESC_NODE,
+                    "deploy/README.md",
                 ));
             }
         }
     }
 
-    // 4. Heartbeat cron (read the last recorded result from D1).
-    services.push(heartbeat_service(&ctx, now).await);
+    // 5. Maintenance job (host cron): liveness from the reserves freshness.
+    services.push(maintenance_service(&ctx, now).await);
 
     Response::from_json(&serde_json::json!({
         "checked_at": now,
@@ -663,17 +730,33 @@ async fn handle_services(req: Request, ctx: RouteContext<()>) -> Result<Response
     }))
 }
 
-/// Build one service entry.
-fn service(key: &str, name: &str, status: &str, detail: &str) -> serde_json::Value {
-    serde_json::json!({ "key": key, "name": name, "status": status, "detail": detail })
+/// Build one service entry (without endpoints; the Worker adds those itself).
+fn svc(
+    key: &str,
+    name: &str,
+    status: &str,
+    detail: &str,
+    description: &str,
+    code_path: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "key": key,
+        "name": name,
+        "status": status,
+        "detail": detail,
+        "description": description,
+        "code_path": code_path,
+    })
 }
 
 /// Node status derived from the live chain tip and the cached scan position.
 async fn node_service(ctx: &RouteContext<()>, chain_height: u32) -> serde_json::Value {
     let name = "Zcash node (zebra + zaino)";
+    let mk =
+        |status, detail: String| svc("node", name, status, &detail, DESC_NODE, "deploy/README.md");
     let db = match ctx.env.d1("DB") {
         Ok(db) => db,
-        Err(_) => return service("node", name, "ok", &format!("Chain tip {chain_height}")),
+        Err(_) => return mk("ok", format!("Chain tip {chain_height}")),
     };
     let row: Option<BalanceRow> = db
         .prepare("SELECT * FROM faucet_balance WHERE id = 1")
@@ -683,31 +766,37 @@ async fn node_service(ctx: &RouteContext<()>, chain_height: u32) -> serde_json::
         .flatten();
     match row {
         // More than 100 blocks behind the tip => still catching up.
-        Some(r) if i64::from(chain_height) - r.fully_scanned > 100 => service(
-            "node",
-            name,
+        Some(r) if i64::from(chain_height) - r.fully_scanned > 100 => mk(
             "degraded",
-            &format!("Syncing: scanned {} of tip {chain_height}", r.fully_scanned),
+            format!("Syncing: scanned {} of tip {chain_height}", r.fully_scanned),
         ),
-        Some(r) => service(
-            "node",
-            name,
+        Some(r) => mk(
             "ok",
-            &format!("Synced: scanned {} of tip {chain_height}", r.fully_scanned),
+            format!("Synced: scanned {} of tip {chain_height}", r.fully_scanned),
         ),
-        None => service("node", name, "ok", &format!("Chain tip {chain_height}")),
+        None => mk("ok", format!("Chain tip {chain_height}")),
     }
 }
 
 /// Heartbeat status from its last recorded run. Considered stale if the last run
 /// is older than three cron intervals (15 minutes).
 async fn heartbeat_service(ctx: &RouteContext<()>, now: i64) -> serde_json::Value {
-    let name = "Heartbeat cron";
+    let name = "Heartbeat job";
+    let mk = |status, detail: String| {
+        svc(
+            "heartbeat",
+            name,
+            status,
+            &detail,
+            DESC_HEARTBEAT,
+            "worker/src/lib.rs",
+        )
+    };
     let Ok(db) = ctx.env.d1("DB") else {
-        return service("heartbeat", name, "unknown", "Status unavailable");
+        return mk("unknown", "Status unavailable".into());
     };
     if ensure_heartbeat_table(&db).await.is_err() {
-        return service("heartbeat", name, "unknown", "Status unavailable");
+        return mk("unknown", "Status unavailable".into());
     }
     let row: Option<HeartbeatRow> = db
         .prepare("SELECT * FROM heartbeat WHERE id = 1")
@@ -716,24 +805,54 @@ async fn heartbeat_service(ctx: &RouteContext<()>, now: i64) -> serde_json::Valu
         .ok()
         .flatten();
     let Some(r) = row else {
-        return service("heartbeat", name, "unknown", "No run recorded yet");
+        return mk("unknown", "No run recorded yet".into());
     };
     let age = now - r.last_run_at;
     let ago = human_ago(age);
     if r.last_status == "error" {
         let msg = r.last_error.as_deref().unwrap_or("unknown error");
-        return service(
-            "heartbeat",
-            name,
-            "down",
-            &format!("Last run {ago} failed: {msg}"),
-        );
+        return mk("down", format!("Last run {ago} failed: {msg}"));
     }
     let txid = r.last_txid.as_deref().unwrap_or("");
-    let detail = format!("Last self-send {ago} (txid {})", short_txid(txid));
     // Stale if no successful run within three intervals.
     let status = if age > 900 { "degraded" } else { "ok" };
-    service("heartbeat", name, status, &detail)
+    mk(
+        status,
+        format!("Last self-send {ago} (txid {})", short_txid(txid)),
+    )
+}
+
+/// Maintenance status inferred from the freshness of the reserves snapshot the
+/// host cron pushes (every 10 minutes). Stale after roughly three intervals.
+async fn maintenance_service(ctx: &RouteContext<()>, now: i64) -> serde_json::Value {
+    let name = "Maintenance job";
+    let mk = |status, detail: String| {
+        svc(
+            "maintenance",
+            name,
+            status,
+            &detail,
+            DESC_MAINTENANCE,
+            "deploy/faucet-maintenance.sh",
+        )
+    };
+    let Ok(db) = ctx.env.d1("DB") else {
+        return mk("unknown", "Status unavailable".into());
+    };
+    let row: Option<BalanceRow> = db
+        .prepare("SELECT * FROM faucet_balance WHERE id = 1")
+        .first(None)
+        .await
+        .ok()
+        .flatten();
+    match row {
+        None => mk("unknown", "No reserves refresh recorded yet".into()),
+        Some(r) => {
+            let age = now - r.updated_at;
+            let status = if age > 2100 { "degraded" } else { "ok" };
+            mk(status, format!("Last reserves refresh {}", human_ago(age)))
+        }
+    }
 }
 
 /// Compact "N units ago" rendering for a duration in seconds.
