@@ -59,11 +59,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Cloudflare by CI (`deploy-worker`); no host process. Tunable via the
   `HEARTBEAT_AMOUNT_ZAT` Worker var; a no-op until `SIGNER_URL` is set.
 - Background-services status card on the frontend, backed by a new
-  `GET /api/faucet/services` endpoint: reports the Worker, signer, Zcash node
-  (zebra + zaino, probed via the signer `/info`), and heartbeat cron with a
-  coarse status (operational/degraded/down) and a one-line detail. The
-  heartbeat result is persisted in D1 (`heartbeat` table) by the scheduled
-  handler.
+  `GET /api/faucet/services` endpoint: reports the Worker API, heartbeat job
+  (both on Cloudflare), and the signer service, Zcash node (zebra + zaino), and
+  maintenance job (on the faucet host, reached over the tunnel) with a coarse
+  status (operational/degraded/down), a one-line live detail, a description of
+  what each service is, and a link to its source. The Worker API entry lists
+  its actual HTTP endpoints. The heartbeat result is persisted in D1
+  (`heartbeat` table) by the scheduled handler; maintenance liveness is
+  inferred from the reserves-snapshot freshness.
 
 ### Changed
 
