@@ -133,6 +133,33 @@ The heartbeat spends Orchard notes, so it only succeeds after the faucet is
 funded and the maintenance shield (step 6) has run at least once; before that it
 logs a failure each tick (harmless).
 
+## 8. Orchard activity generator (host, behind the tunnel)
+
+`faucet-orchard-generator.sh` keeps the Orchard pool continuously active by
+firing a burst of small Orchard self-sends each run. Unlike the heartbeat (a
+Cloudflare Worker cron), this runs on the signer host, talking to the local
+signer directly, so it does not depend on the tunnel for its own calls. Run it
+every minute, 10 transactions per run:
+
+```bash
+# crontab on the signer host, every minute:
+* * * * * SIGNER_SHARED_SECRET=... ORCHARD_TX_BURST=10 \
+  /opt/faucet/deploy/faucet-orchard-generator.sh \
+  >> /var/log/faucet-orchard-generator.log 2>&1
+```
+
+Tunables: `ORCHARD_TX_BURST` (default 10), `ORCHARD_TX_AMOUNT_ZAT` (default 1000),
+`SIGNER_LOCAL_URL` (default `http://127.0.0.1:8080`). Self-sends keep the
+principal; only the ZIP-317 fee leaves the wallet per transaction.
+
+Throughput caveat: each Orchard send spends a confirmed note and produces
+unconfirmed change, so the number that lands per minute is bounded by how many
+confirmed spendable notes the wallet holds. Sends beyond that fail until earlier
+change confirms; the script tolerates per-transaction failures and continues.
+The self-sends fragment the balance into more notes over time, which raises the
+achievable rate. A per-minute `mkdir` lock prevents overlapping runs when a burst
+takes longer than the interval.
+
 ## Status
 
 The signer wallet engine is implemented end-to-end against the lightwalletd
